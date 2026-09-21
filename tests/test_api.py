@@ -11,7 +11,7 @@ class StubAgent:
         self.calls: list[tuple[str, tuple[ConversationMessage, ...]]] = []
 
     def reply(
-        self, message: str, history: tuple[ConversationMessage, ...] = ()
+        self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None
     ) -> str:
         self.calls.append((message, tuple(history)))
         return "Hello from SkySun"
@@ -52,7 +52,7 @@ def test_unknown_conversation_is_not_created() -> None:
 
 def test_chat_hides_agent_error() -> None:
     class FailingAgent:
-        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
             raise RuntimeError("private provider failure")
 
     client = TestClient(
@@ -66,7 +66,7 @@ def test_chat_hides_agent_error() -> None:
 
 def test_agent_key_error_is_not_mistaken_for_missing_conversation() -> None:
     class FailingAgent:
-        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
             raise KeyError("provider data missing")
 
     client = TestClient(

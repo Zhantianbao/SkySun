@@ -18,7 +18,7 @@ class RecordingAgent:
         self.histories: list[tuple[ConversationMessage, ...]] = []
 
     def reply(
-        self, message: str, history: tuple[ConversationMessage, ...] = ()
+        self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None
     ) -> str:
         self.histories.append(tuple(history))
         return f"Answered: {message}"
@@ -76,7 +76,7 @@ def test_failed_turn_does_not_change_history() -> None:
     conversation_id = store.create()
 
     class FailingAgent:
-        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
             raise RuntimeError("provider unavailable")
 
     service = ConversationService(FailingAgent(), store)
@@ -91,7 +91,7 @@ def test_separate_conversations_can_run_concurrently() -> None:
     barrier = Barrier(2)
 
     class ConcurrentAgent:
-        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
             barrier.wait(timeout=5)
             return message
 

@@ -1,6 +1,7 @@
 """LangChain adapter for SkySun's conversation-aware Agent interface."""
 
 from typing import Any, Sequence
+from uuid import UUID
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
@@ -15,17 +16,30 @@ from skysun.tools import count_words, forget_memory, recall_memories, remember_m
 
 class LangChainAgent:
     def __init__(self, model: BaseChatModel, memory_store: MemoryStore | None = None) -> None:
+        self._model = model
+        self._memory_store = memory_store
+
+    def reply(
+        self,
+        message: str,
+        history: Sequence[ConversationMessage] = (),
+        conversation_id: str | None = None,
+    ) -> str:
+        """Run one Agent invocation with tools scoped to this conversation."""
         tools = [count_words]
-        if memory_store is not None:
+        if self._memory_store is not None:
+            memory_store = self._memory_store
+            source_id = UUID(conversation_id) if conversation_id else None
+
             @tool("remember_memory")
             def remember_memory_tool(key: str, content: str, category: str = "") -> str:
-                """Save a durable user fact, preference, or goal. Use a stable snake_case semantic key (e.g. favorite_test_planet); reuse the same key to update. Never save passwords, API keys, tokens, private keys, or other credentials. Do not save passing trivia."""
-                return remember_memory(memory_store, key, content, category or None)
+                """Save a durable user fact, preference, or goal. Reuse a stable snake_case semantic key to update. Never save passwords, API keys, tokens, private keys, or credentials."""
+                return remember_memory(memory_store, key, content, category or None, source_id)
 
             @tool("recall_memories")
-            def recall_memories_tool() -> str:
-                """Retrieve up to 20 stored personal memories when the user's question depends on information from other conversations. Do not invent memories absent from the result."""
-                return recall_memories(memory_store)
+            def recall_memories_tool(query: str = "") -> str:
+                """Retrieve up to 20 personal memories for user-specific questions. Pass relevant keywords in query for basic lexical lookup; empty query lists recent memories. Never invent absent memories."""
+                return recall_memories(memory_store, query)
 
             @tool("forget_memory")
             def forget_memory_tool(key: str) -> str:
@@ -33,23 +47,15 @@ class LangChainAgent:
                 return forget_memory(memory_store, key)
 
             tools.extend([remember_memory_tool, recall_memories_tool, forget_memory_tool])
-        self._agent = create_agent(
-            model=model,
+        agent = create_agent(
+            model=self._model,
             tools=tools,
             system_prompt=SYSTEM_PROMPT,
             middleware=[ModelCallLimitMiddleware(run_limit=5, exit_behavior="error")],
         )
-
-    def reply(
-        self, message: str, history: Sequence[ConversationMessage] = ()
-    ) -> str:
-        """Convert SkySun messages and run one LangChain invocation."""
-        messages = [
-            {"role": turn.role, "content": turn.content}
-            for turn in history
-        ]
+        messages = [{"role": turn.role, "content": turn.content} for turn in history]
         messages.append({"role": "user", "content": message})
-        result: dict[str, Any] = self._agent.invoke({"messages": messages})
+        result: dict[str, Any] = agent.invoke({"messages": messages})
         final_messages = result["messages"]
         if not final_messages:
             raise RuntimeError("Agent returned no messages")

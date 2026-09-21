@@ -24,7 +24,7 @@ class ChatResponse(BaseModel):
 
 
 def build_api(conversations: ConversationService) -> FastAPI:
-    app = FastAPI(title="SkySun", version="0.4.0")
+    app = FastAPI(title="SkySun", version="0.5.0")
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest) -> ChatResponse:

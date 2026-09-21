@@ -96,7 +96,13 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
 
     from skysun.conversation import InMemoryConversationStore
 
-    client = TestClient(main.create_app(InMemoryConversationStore()))
+    from skysun.memory_curator import MemoryPlan
+
+    class NoOpCurator:
+        def decide(self, context):
+            return MemoryPlan()
+
+    client = TestClient(main.create_app(InMemoryConversationStore(), curator=NoOpCurator()))
     response = client.post("/chat", json={"message": "Count the words"})
 
     assert response.status_code == 200

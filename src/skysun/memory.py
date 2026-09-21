@@ -3,10 +3,21 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 _KEY_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,79}")
+_SECRET_TERMS = re.compile(
+    r"\b(?:password|passphrase|api[\s_-]?key|access[\s_-]?token|"
+    r"private[\s_-]?key|auth(?:entication)?[\s_-]?credential|"
+    r"database[\s_-]?password)\b",
+    re.IGNORECASE,
+)
+
+
+def secret_like_memory(key: str, content: str = "") -> bool:
+    """Reject obvious credential labels; this is a narrow safeguard, not a classifier."""
+    return bool(_SECRET_TERMS.search(key) or _SECRET_TERMS.search(content))
 
 
 def normalize_key(key: str) -> str:
@@ -28,6 +39,14 @@ class PersonalMemory:
     updated_at: datetime
 
 
+@dataclass(frozen=True)
+class MemoryChange:
+    action: Literal["upsert", "delete"]
+    key: str
+    content: str | None = None
+    category: str | None = None
+
+
 class MemoryStore(Protocol):
     def remember(
         self,
@@ -42,3 +61,7 @@ class MemoryStore(Protocol):
     def list_memories(self, limit: int = 20) -> tuple[PersonalMemory, ...]: ...
 
     def forget(self, key: str) -> bool: ...
+
+    def search_memories(self, query: str, limit: int = 20) -> tuple[PersonalMemory, ...]: ...
+
+    def apply_changes(self, changes: tuple[MemoryChange, ...], source_conversation_id: UUID) -> None: ...

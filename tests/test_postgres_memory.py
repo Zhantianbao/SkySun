@@ -8,7 +8,7 @@ import psycopg
 import pytest
 
 from skysun.conversation import ConversationMessage
-from skysun.memory import normalize_key
+from skysun.memory import MemoryChange, normalize_key
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_memory import PostgresMemoryStore
 
@@ -100,3 +100,41 @@ def test_memory_sql_error_omits_database_detail(monkeypatch: pytest.MonkeyPatch)
     with pytest.raises(RuntimeError, match="Personal memory PostgreSQL operation failed") as exc:
         memory.remember("test_key", "test value")
     assert "sensitive database detail" not in str(exc.value)
+
+
+def test_curator_batch_is_atomic_and_lexical_recall_is_bounded(
+    stores: tuple[PostgresMemoryStore, PostgresConversationStore],
+) -> None:
+    memory, _ = stores
+    prefix = f"v04_test_batch_{uuid4().hex[:8]}"
+    source = uuid4()
+    first_key = f"{prefix}_editor"
+    second_key = f"{prefix}_goal"
+    try:
+        memory.apply_changes((
+            MemoryChange("upsert", first_key, "PyCharm", "preference"),
+            MemoryChange("upsert", second_key, "AI engineer", "goal"),
+        ), source)
+        assert memory.get(first_key).source_conversation_id == source
+        assert memory.search_memories("PyCharm editor", limit=1)[0].key == first_key
+        assert len(memory.search_memories("editor", limit=1)) == 1
+
+        with pytest.raises(RuntimeError, match="Personal memory PostgreSQL operation failed"):
+            memory.apply_changes((
+                MemoryChange("upsert", first_key, "VS Code", "preference"),
+                MemoryChange("upsert", second_key, "invalid\x00value", "goal"),
+            ), source)
+        assert memory.get(first_key).content == "PyCharm"
+        assert memory.get(second_key).content == "AI engineer"
+    finally:
+        memory.forget(first_key)
+        memory.forget(second_key)
+
+
+def test_obvious_secret_label_is_rejected_by_storage(
+    stores: tuple[PostgresMemoryStore, PostgresConversationStore],
+) -> None:
+    memory, _ = stores
+    with pytest.raises(ValueError, match="Secret-like memory rejected"):
+        memory.remember("api_key", "FAKE-TEST-TOKEN")
+    assert memory.get("api_key") is None

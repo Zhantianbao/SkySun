@@ -89,7 +89,7 @@ def test_agent_failure_does_not_persist_partial_turn(
     conversation_id = create()
 
     class FailingAgent:
-        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
             raise RuntimeError("model unavailable")
 
     with pytest.raises(RuntimeError, match="model unavailable"):

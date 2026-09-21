@@ -7,7 +7,9 @@ from skysun.config import load_settings
 from skysun.conversation import ConversationService, ConversationStore
 from skysun.deepseek import create_deepseek
 from skysun.langchain_agent import LangChainAgent
+from skysun.langchain_memory_curator import LangChainMemoryCurator
 from skysun.memory import MemoryStore
+from skysun.memory_curator import MemoryCurator, MemoryCurationService
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_memory import PostgresMemoryStore
 
@@ -15,6 +17,7 @@ from skysun.postgres_memory import PostgresMemoryStore
 def create_app(
     store: ConversationStore | None = None,
     memory_store: MemoryStore | None = None,
+    curator: MemoryCurator | None = None,
 ) -> FastAPI:
     """Build the app; normal runtime initializes both PostgreSQL stores."""
     settings = load_settings()
@@ -29,4 +32,6 @@ def create_app(
         memory_store = postgres_memory
     model = create_deepseek(settings)
     agent = LangChainAgent(model, memory_store)
-    return build_api(ConversationService(agent, store))
+    curator = curator or LangChainMemoryCurator(model)
+    curation = MemoryCurationService(curator, memory_store)
+    return build_api(ConversationService(agent, store, curation))

@@ -48,8 +48,8 @@ class PostgresConversationStore:
                 """
             )
 
-    def create(self) -> str:
-        conversation_id = uuid4()
+    def create(self, conversation_id: str | None = None) -> str:
+        conversation_id = UUID(conversation_id) if conversation_id else uuid4()
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO conversations (id) VALUES (%s)",

@@ -7,5 +7,8 @@ if TYPE_CHECKING:
 
 
 class Agent(Protocol):
-    def reply(self, message: str, history: Sequence["ConversationMessage"] = ()) -> str:
+    def reply(
+        self, message: str, history: Sequence["ConversationMessage"] = (),
+        conversation_id: str | None = None,
+    ) -> str:
         """Return a final answer using the supplied conversation history and capabilities."""

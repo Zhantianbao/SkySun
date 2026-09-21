@@ -35,6 +35,9 @@ class FakeMemoryStore:
     def forget(self, key: str) -> bool:
         return self.items.pop(normalize_key(key), None) is not None
 
+    def search_memories(self, query: str, limit: int = 20) -> tuple[PersonalMemory, ...]:
+        return self.list_memories(limit)
+
 
 class FakeMemoryCallingModel(BaseChatModel):
     _tool_names: list[str] = PrivateAttr(default_factory=list)
@@ -73,6 +76,8 @@ def test_memory_tools_through_agent_and_separate_conversations() -> None:
     first_id, answer = service.chat("remember")
     assert "Saved" in answer
     assert memory.get("favorite_test_planet").content == "Kepler-186f"
+    from uuid import UUID
+    assert memory.get("favorite_test_planet").source_conversation_id == UUID(first_id)
     second_id, answer = service.chat("recall")
     assert second_id != first_id
     assert "Kepler-186f" in answer
