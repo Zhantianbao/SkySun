@@ -1,17 +1,21 @@
 from typing import Any, Sequence
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from pydantic import ValidationError
+from pydantic import PrivateAttr, ValidationError
 
 from skysun.config import Settings
+from skysun.conversation import ConversationMessage
 from skysun.langchain_agent import LangChainAgent
 
 
 class FakeToolCallingModel(BaseChatModel):
+    _seen: list[list[str]] = PrivateAttr(default_factory=list)
+
     @property
     def _llm_type(self) -> str:
         return "fake-tool-calling"
@@ -26,6 +30,7 @@ class FakeToolCallingModel(BaseChatModel):
         stop: list[str] | None = None,
         **kwargs: Any,
     ) -> ChatResult:
+        self._seen.append([str(message.content) for message in messages])
         tool_messages = [message for message in messages if isinstance(message, ToolMessage)]
         if tool_messages:
             answer = AIMessage(content=f"Count: {tool_messages[-1].content}")
@@ -43,11 +48,19 @@ class FakeToolCallingModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=answer)])
 
 
-def test_langchain_owns_tool_call_loop() -> None:
-    agent = LangChainAgent(FakeToolCallingModel())
+def test_langchain_owns_tool_call_loop_and_converts_history() -> None:
+    model = FakeToolCallingModel()
+    agent = LangChainAgent(model)
+    history = (
+        ConversationMessage("user", "older question"),
+        ConversationMessage("assistant", "older answer"),
+    )
 
-    assert agent.reply("Count the words") == "Count: 3"
+    assert agent.reply("Count the words", history) == "Count: 3"
+    assert "older question" in model._seen[0]
+    assert "older answer" in model._seen[0]
     assert agent.reply("Count again") == "Count: 3"
+    assert "older question" not in model._seen[2]
 
 
 def test_settings_require_key_and_use_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,4 +88,5 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
     response = client.post("/chat", json={"message": "Count the words"})
 
     assert response.status_code == 200
-    assert response.json() == {"reply": "Count: 3"}
+    assert response.json()["reply"] == "Count: 3"
+    UUID(response.json()["conversation_id"])
