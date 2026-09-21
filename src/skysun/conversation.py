@@ -1,7 +1,7 @@
 """SkySun-owned conversation types and temporary in-memory storage.
 
 InMemoryConversationStore loses history on restart. PostgreSQL storage is the
-normal runtime for v0.3. Neither store is long-term personal memory.
+normal runtime. Neither store is long-term personal memory.
 """
 
 from dataclasses import dataclass

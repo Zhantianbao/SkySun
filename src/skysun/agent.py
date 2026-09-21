@@ -8,4 +8,4 @@ if TYPE_CHECKING:
 
 class Agent(Protocol):
     def reply(self, message: str, history: Sequence["ConversationMessage"] = ()) -> str:
-        """Return a final answer using only the supplied conversation history."""
+        """Return a final answer using the supplied conversation history and capabilities."""
