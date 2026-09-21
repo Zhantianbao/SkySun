@@ -14,12 +14,13 @@ class Settings(BaseSettings):
     deepseek_api_key: SecretStr
     deepseek_base_url: str = "https://api.deepseek.com"
     skysun_model: str = Field(default="deepseek-flash", min_length=1)
+    database_url: SecretStr
 
-    @field_validator("deepseek_api_key")
+    @field_validator("deepseek_api_key", "database_url")
     @classmethod
-    def require_api_key(cls, value: SecretStr) -> SecretStr:
+    def require_nonempty_secret(cls, value: SecretStr) -> SecretStr:
         if not value.get_secret_value().strip():
-            raise ValueError("DEEPSEEK_API_KEY must not be empty")
+            raise ValueError("Required configuration must not be empty")
         return value
 
 

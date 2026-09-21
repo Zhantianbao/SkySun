@@ -65,13 +65,19 @@ def test_langchain_owns_tool_call_loop_and_converts_history() -> None:
 
 def test_settings_require_key_and_use_default_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql:///skysun_test")
     with pytest.raises(ValidationError, match="deepseek_api_key"):
         Settings(_env_file=None)
 
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
     settings = Settings(_env_file=None)
     assert settings.skysun_model == "deepseek-flash"
+    assert settings.database_url.get_secret_value() == "postgresql:///skysun_test"
     assert settings.deepseek_api_key.get_secret_value() == "test-key"
+
+    monkeypatch.delenv("DATABASE_URL")
+    with pytest.raises(ValidationError, match="database_url"):
+        Settings(_env_file=None)
 
 
 def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,11 +86,17 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         main,
         "load_settings",
-        lambda: Settings(deepseek_api_key="test-key", _env_file=None),
+        lambda: Settings(
+            deepseek_api_key="test-key",
+            database_url="postgresql:///skysun_test",
+            _env_file=None,
+        ),
     )
     monkeypatch.setattr(main, "create_deepseek", lambda settings: FakeToolCallingModel())
 
-    client = TestClient(main.create_app())
+    from skysun.conversation import InMemoryConversationStore
+
+    client = TestClient(main.create_app(InMemoryConversationStore()))
     response = client.post("/chat", json={"message": "Count the words"})
 
     assert response.status_code == 200

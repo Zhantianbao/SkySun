@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from uuid import UUID
 
 import pytest
@@ -82,3 +84,20 @@ def test_failed_turn_does_not_change_history() -> None:
         service.chat("Hello", conversation_id)
 
     assert store.get_history(conversation_id) == ()
+
+
+
+def test_separate_conversations_can_run_concurrently() -> None:
+    barrier = Barrier(2)
+
+    class ConcurrentAgent:
+        def reply(self, message: str, history: tuple[ConversationMessage, ...] = ()) -> str:
+            barrier.wait(timeout=5)
+            return message
+
+    service = ConversationService(ConcurrentAgent(), InMemoryConversationStore())
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(service.chat, "first")
+        second = executor.submit(service.chat, "second")
+        assert first.result()[1] == "first"
+        assert second.result()[1] == "second"
