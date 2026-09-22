@@ -1,5 +1,6 @@
 """LangChain adapter for SkySun's conversation-aware Agent interface."""
 
+from dataclasses import dataclass
 from typing import Any, Sequence
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from langchain_core.tools import tool
 from skysun.conversation import ConversationMessage
 from skysun.embeddings import EmbeddingProvider
 from skysun.identity import SYSTEM_PROMPT
-from skysun.knowledge import KnowledgeStore
+from skysun.knowledge import KnowledgeSearchResult, KnowledgeStore
 from skysun.knowledge_grounding import (
     EvidenceEvaluator, GroundedKnowledge, GroundedKnowledgeService, GroundingStatus, QueryRewriter,
 )
@@ -26,6 +27,15 @@ from skysun.tools import (
     search_knowledge,
     format_knowledge_evidence,
 )
+
+
+@dataclass(frozen=True)
+class AgentExecution:
+    answer: str
+    tools_used: tuple[str, ...]
+    tool_failures: tuple[str, ...]
+    grounding_status: GroundingStatus | None
+    sources: tuple[KnowledgeSearchResult, ...]
 
 
 class LangChainAgent:
@@ -53,15 +63,30 @@ class LangChainAgent:
         history: Sequence[ConversationMessage] = (),
         conversation_id: str | None = None,
     ) -> str:
+        return self.execute(message, history, conversation_id).answer
+
+    def execute(
+        self,
+        message: str,
+        history: Sequence[ConversationMessage] = (),
+        conversation_id: str | None = None,
+        knowledge_question: str | None = None,
+    ) -> AgentExecution:
         """Run one Agent invocation with tools scoped to this conversation."""
         tool_failures: set[str] = set()
+        tools_used: set[str] = set()
 
         def record_tool_result(name: str, result: str) -> str:
+            tools_used.add(name)
             if is_tool_failure(result):
                 tool_failures.add(name)
             else:
                 tool_failures.discard(name)
             return result
+
+        def record_validation_failure(name: str, result: str) -> None:
+            tools_used.add(name)
+            tool_failures.add(name)
 
         @tool("count_words")
         def count_words_tool(text: str) -> str:
@@ -70,7 +95,9 @@ class LangChainAgent:
                 "count_words", lambda: count_words(text)
             ))
 
-        tools = [configure_validation(count_words_tool, lambda result: tool_failures.add("count_words"))]
+        tools = [configure_validation(
+            count_words_tool, lambda result: record_validation_failure("count_words", result)
+        )]
         knowledge_outcome: GroundedKnowledge | None = None
         memory_read_failure: str | None = None
         if self._memory_store is not None:
@@ -103,7 +130,7 @@ class LangChainAgent:
                 ))
 
             tools.extend(configure_validation(
-                item, lambda result, name=item.name: tool_failures.add(name)
+                item, lambda result, name=item.name: record_validation_failure(name, result)
             ) for item in (
                 remember_memory_tool, recall_memories_tool, forget_memory_tool
             ))
@@ -121,13 +148,13 @@ class LangChainAgent:
                         evaluator = self._evidence_evaluator or LangChainEvidenceEvaluator(self._model)
                         rewriter = self._query_rewriter or LangChainQueryRewriter(self._model)
                         service = GroundedKnowledgeService(knowledge_store, embeddings, evaluator, rewriter)
-                        knowledge_outcome = search_knowledge(service, message, limit)
+                        knowledge_outcome = search_knowledge(service, knowledge_question or message, limit)
                     return format_knowledge_evidence(knowledge_outcome)
 
                 return record_tool_result("search_knowledge", run_tool("search_knowledge", execute))
 
             tools.append(configure_validation(
-                search_knowledge_tool, lambda result: tool_failures.add("search_knowledge")
+                search_knowledge_tool, lambda result: record_validation_failure("search_knowledge", result)
             ))
         agent = create_agent(
             model=self._model,
@@ -145,17 +172,22 @@ class LangChainAgent:
         if not isinstance(content, str) or not content:
             raise RuntimeError("Agent returned no text answer")
         if "recall_memories" in tool_failures:
-            return "I couldn't access personal memory, so I can't verify that answer right now."
-        if {"remember_memory", "forget_memory"} & tool_failures:
-            return "I couldn't update personal memory right now."
-        if tool_failures:
-            return "I couldn't complete the requested tool operation right now."
-        if knowledge_outcome is not None:
+            content = "I couldn't access personal memory, so I can't verify that answer right now."
+        elif {"remember_memory", "forget_memory"} & tool_failures:
+            content = "I couldn't update personal memory right now."
+        elif tool_failures:
+            content = "I couldn't complete the requested tool operation right now."
+        elif knowledge_outcome is not None:
             if knowledge_outcome.status is not GroundingStatus.SUFFICIENT:
-                return "The current knowledge base does not provide enough evidence to answer."
-            sources = "\n".join(
-                f"- {chunk.source_name} ({chunk.source_path}), chunk {chunk.chunk_index}"
-                for chunk in knowledge_outcome.supporting_chunks
-            )
-            return f"{content}\n\nSources:\n{sources}"
-        return content
+                content = "The current knowledge base does not provide enough evidence to answer."
+            else:
+                sources = "\n".join(
+                    f"- {chunk.source_name} ({chunk.source_path}), chunk {chunk.chunk_index}"
+                    for chunk in knowledge_outcome.supporting_chunks
+                )
+                content = f"{content}\n\nSources:\n{sources}"
+        return AgentExecution(
+            content, tuple(sorted(tools_used)), tuple(sorted(tool_failures)),
+            knowledge_outcome.status if knowledge_outcome is not None else None,
+            knowledge_outcome.supporting_chunks if knowledge_outcome is not None else (),
+        )

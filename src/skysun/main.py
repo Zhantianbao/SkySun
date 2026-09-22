@@ -10,11 +10,13 @@ from skysun.embeddings import EmbeddingProvider, SentenceTransformerEmbeddingPro
 from skysun.knowledge import KnowledgeStore
 from skysun.langchain_agent import LangChainAgent
 from skysun.langchain_memory_curator import LangChainMemoryCurator
+from skysun.langchain_planner import LangChainTaskPlanner
 from skysun.memory import MemoryStore
 from skysun.memory_curator import MemoryCurator, MemoryCurationService
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 from skysun.postgres_memory import PostgresMemoryStore
+from skysun.workflow_agent import WorkflowAgent
 
 
 def create_app(
@@ -42,7 +44,11 @@ def create_app(
     if embeddings is None:
         embeddings = SentenceTransformerEmbeddingProvider()
     model = create_deepseek(settings)
-    agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
+    direct_agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
+    agent = WorkflowAgent(
+        direct_agent, LangChainTaskPlanner(model),
+        ("reason", "count_words", "recall_memories", "remember_memory", "forget_memory", "search_knowledge"),
+    )
     curator = curator or LangChainMemoryCurator(model)
     curation = MemoryCurationService(curator, memory_store)
     return build_api(ConversationService(agent, store, curation))
