@@ -11,7 +11,7 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.5.0) — Automatic memory curation.
 - [v0.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.6.0) — Persistent document knowledge and vector RAG.
 - [v0.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.7.0) — Grounded Knowledge Reasoning.
-- v0.8.0 — Agent Memory & Tool Reliability (this version).
+- [v0.8.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.8.0) — Agent Memory & Tool Reliability (this version).
 
 ## Local setup
 
