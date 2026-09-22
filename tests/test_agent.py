@@ -125,6 +125,7 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
                                headers={"Authorization": f"Bearer {token}"})
     finally:
         with psycopg.connect("postgresql:///skysun_test") as conn:
+            conn.execute("DELETE FROM agent_tasks WHERE user_id = %s", (user.user_id,))
             conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (user.user_id,))
 
     assert response.status_code == 200

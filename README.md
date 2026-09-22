@@ -1,4 +1,4 @@
-# SkySun v1.1
+# SkySun v1.2
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -14,7 +14,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.8.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.8.0) — Agent Memory & Tool Reliability.
 - [v0.9.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.9.0) — Agent Workflow & Task Planning.
 - [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime.
-- [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform (this version).
+- [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform.
+- [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System (this version).
 
 ## Local setup
 
@@ -73,6 +74,14 @@ Multi-step requests now create PostgreSQL task records before planning. The plan
 HTTP requests use `Authorization: Bearer <token>`. The administrator creates users with `POST /admin/users` using a JSON body such as `{"username":"alice","role":"USER"}`. The response returns the new user's token once; SkySun stores only its hash. `GET /me` reports the authenticated identity. Users can access their own conversations, personal memories through the Agent, tasks, and task events. `GET /admin/summary` reports system counts to administrators without exposing other users' private content. The `/chat` request and response shapes remain unchanged apart from the required authorization header.
 
 Personal memories are keyed per user. Global memories are held separately for administrator-managed system information and are never returned by personal-memory retrieval. Existing document knowledge remains globally visible; documents saved under an authenticated user context are private to that user. The local ingestion CLI still creates global documents. Existing single-user conversations, memories, and tasks are assigned to `legacy_admin` during idempotent schema migration. Tokens are local bearer credentials; external OAuth and token rotation UI are not included.
+
+## Agent Observability & Evaluation
+
+Every Agent request now has a persistent task ID, including requests handled by the direct Agent path. PostgreSQL traces record request, planning, workflow step, tool, memory retrieval, knowledge retrieval, verification, evaluation, and final response stages where applicable. Each trace records the owner, status, timestamps, duration, and limited metadata such as step or tool name. Tool arguments, request text, and answers are not copied into trace metadata.
+
+Response evaluations combine workflow verification and validated grounding with a bounded DeepSeek review of claims against selected document passages. They report a 0–100 score, `PASS`, `REVIEW`, or `FAIL`, and reasons. A review that cannot be parsed or completed becomes `REVIEW`; a score is an advisory signal, not proof that an answer is true. Requests without document evidence are marked for review rather than automatically certified. Evaluations and traces remain linked to their owner and task.
+
+Administrators can read `GET /admin/metrics`, `GET /admin/traces`, and `GET /admin/evaluations`; ordinary users receive 403. Metrics include task success rate, average request/tool/workflow duration, tool failure rate, verification failures, task count, and user activity. An authenticated user can submit `POST /tasks/{task_id}/feedback` with `{"rating":"POSITIVE"}` or `{"rating":"NEGATIVE","comment":"..."}` for their own final response. Feedback stores the response hash and can be updated by the same user. Cross-user feedback is rejected.
 
 
 ## Current WSL pgvector installation
