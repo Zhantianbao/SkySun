@@ -29,6 +29,7 @@ class KnowledgeSearchResult:
     source_path: str
     chunk_index: int
     cosine_distance: float
+    chunk_id: UUID | None = None
 
 
 @dataclass(frozen=True)

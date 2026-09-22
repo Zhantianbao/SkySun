@@ -12,6 +12,10 @@ from skysun.conversation import ConversationMessage
 from skysun.embeddings import EmbeddingProvider
 from skysun.identity import SYSTEM_PROMPT
 from skysun.knowledge import KnowledgeStore
+from skysun.knowledge_grounding import (
+    EvidenceEvaluator, GroundedKnowledge, GroundedKnowledgeService, GroundingStatus, QueryRewriter,
+)
+from skysun.langchain_knowledge_grounding import LangChainEvidenceEvaluator, LangChainQueryRewriter
 from skysun.memory import MemoryStore
 from skysun.tools import (
     count_words,
@@ -19,6 +23,7 @@ from skysun.tools import (
     recall_memories,
     remember_memory,
     search_knowledge,
+    format_knowledge_evidence,
 )
 
 
@@ -29,6 +34,8 @@ class LangChainAgent:
         memory_store: MemoryStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         embeddings: EmbeddingProvider | None = None,
+        evidence_evaluator: EvidenceEvaluator | None = None,
+        query_rewriter: QueryRewriter | None = None,
     ) -> None:
         if (knowledge_store is None) != (embeddings is None):
             raise ValueError("Knowledge store and embeddings must be supplied together")
@@ -36,6 +43,8 @@ class LangChainAgent:
         self._memory_store = memory_store
         self._knowledge_store = knowledge_store
         self._embeddings = embeddings
+        self._evidence_evaluator = evidence_evaluator
+        self._query_rewriter = query_rewriter
 
     def reply(
         self,
@@ -45,6 +54,7 @@ class LangChainAgent:
     ) -> str:
         """Run one Agent invocation with tools scoped to this conversation."""
         tools = [count_words]
+        knowledge_outcome: GroundedKnowledge | None = None
         if self._memory_store is not None:
             memory_store = self._memory_store
             source_id = UUID(conversation_id) if conversation_id else None
@@ -71,8 +81,14 @@ class LangChainAgent:
 
             @tool("search_knowledge")
             def search_knowledge_tool(query: str, limit: int = 4) -> str:
-                """Search stored external documents when the question depends on private notes or documents. Use for document knowledge, not personal memory or general facts. Returns source details. Nearest passages may be unrelated; answer only when the passage supports it, otherwise say the stored knowledge lacks the answer."""
-                return search_knowledge(knowledge_store, embeddings, query, limit)
+                """Find validated evidence for a question about stored documents. Call once per user question. The application controls any retry. Do not use for personal memory or general facts."""
+                nonlocal knowledge_outcome
+                if knowledge_outcome is None:
+                    evaluator = self._evidence_evaluator or LangChainEvidenceEvaluator(self._model)
+                    rewriter = self._query_rewriter or LangChainQueryRewriter(self._model)
+                    service = GroundedKnowledgeService(knowledge_store, embeddings, evaluator, rewriter)
+                    knowledge_outcome = search_knowledge(service, message, limit)
+                return format_knowledge_evidence(knowledge_outcome)
 
             tools.append(search_knowledge_tool)
         agent = create_agent(
@@ -90,4 +106,12 @@ class LangChainAgent:
         content = final_messages[-1].content
         if not isinstance(content, str) or not content:
             raise RuntimeError("Agent returned no text answer")
+        if knowledge_outcome is not None:
+            if knowledge_outcome.status is not GroundingStatus.SUFFICIENT:
+                return "The current knowledge base does not provide enough evidence to answer."
+            sources = "\n".join(
+                f"- {chunk.source_name} ({chunk.source_path}), chunk {chunk.chunk_index}"
+                for chunk in knowledge_outcome.supporting_chunks
+            )
+            return f"{content}\n\nSources:\n{sources}"
         return content

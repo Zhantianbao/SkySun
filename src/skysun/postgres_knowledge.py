@@ -172,7 +172,7 @@ class PostgresKnowledgeStore:
             rows = conn.execute(
                 """
                 SELECT c.content, d.source_name, d.source_path, c.chunk_index,
-                       c.embedding <=> %s AS cosine_distance
+                       c.embedding <=> %s AS cosine_distance, c.id
                 FROM knowledge_chunks AS c
                 JOIN knowledge_documents AS d ON d.id = c.document_id
                 WHERE c.embedding <=> %s <= %s

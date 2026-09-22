@@ -17,7 +17,7 @@ from skysun.knowledge import (
 )
 from skysun.knowledge_ingestion import KnowledgeIngestionService, chunk_text
 from skysun.langchain_agent import LangChainAgent
-from skysun.tools import search_knowledge
+from skysun.knowledge_grounding import GroundingResult, GroundingStatus
 
 _VECTOR_A = (1.0,) + (0.0,) * 383
 
@@ -160,24 +160,24 @@ def test_agent_knowledge_tool_uses_query_embeddings_and_source_metadata() -> Non
             "helios.md", "/notes/helios.md", 2, 0.12,
         ),
     )
-    agent = LangChainAgent(FakeKnowledgeCallingModel(), knowledge_store=store, embeddings=embeddings)
+    class Evaluator:
+        def evaluate(self, question, candidates):
+            return GroundingResult(status=GroundingStatus.SUFFICIENT,
+                                   supporting_chunk_ids=(candidates[0][0],), reason="Explicit answer")
+
+    class Rewriter:
+        def rewrite(self, question):
+            return question
+
+    agent = LangChainAgent(FakeKnowledgeCallingModel(), knowledge_store=store, embeddings=embeddings,
+                           evidence_evaluator=Evaluator(), query_rewriter=Rewriter())
     answer = agent.reply("What shield does Helios use?")
     assert "sapphire" in answer
     assert "helios.md" in answer
     assert "/notes/helios.md" in answer
     assert "chunk 2" in answer
-    assert embeddings.queries == ["Helios shield"]
+    assert embeddings.queries == ["What shield does Helios use?"]
     assert store.searches[0][1] == 4
-    store.search_results = ()
-    assert search_knowledge(store, embeddings, "absent fact") == "No relevant stored knowledge found."
-
-    class BrokenStore(FakeKnowledgeStore):
-        def search(self, query_embedding, limit=4, max_cosine_distance=0.35):
-            raise RuntimeError("database unavailable")
-
-    assert search_knowledge(BrokenStore(), embeddings, "Helios") == (
-        "Knowledge search is temporarily unavailable."
-    )
 
 
 

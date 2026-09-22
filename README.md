@@ -1,4 +1,4 @@
-# SkySun v0.6
+# SkySun v0.7
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -10,6 +10,7 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.4.0) — Durable personal memory and memory tools.
 - [v0.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.5.0) — Automatic memory curation.
 - [v0.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.6.0) — Persistent document knowledge and vector RAG.
+- v0.7.0 — Grounded Knowledge Reasoning (this version).
 
 ## Local setup
 
@@ -41,7 +42,11 @@ Re-ingesting an unchanged file is a no-op. Re-ingesting a changed file atomicall
 
 The first embedding use downloads `intfloat/multilingual-e5-small` into the normal Hugging Face cache outside the repository. SkySun loads it once per application process on CPU. E5 input uses `passage:` for chunks and `query:` for searches; vectors are normalized to 384 dimensions.
 
-Chunking targets 1,000 characters with 150 characters of overlap and prefers newline boundaries. Search performs exact pgvector cosine-distance ordering, returns at most four chunks by default, and filters results above an initial 0.35 distance. This threshold is a starting heuristic and can miss useful passages or admit unrelated ones; a returned passage is not proof that it answers the question. There is no ANN index or reranker in v0.6. The Agent invokes document search as a tool only when a question calls for stored document knowledge. Selected retrieved passages are sent to the configured DeepSeek model for answering; embeddings are computed locally.
+Chunking targets 1,000 characters with 150 characters of overlap and prefers newline boundaries. Search performs exact pgvector cosine-distance ordering, returns at most four chunks by default, and filters results above an initial 0.35 distance. This threshold is only a retrieval heuristic: semantic similarity does not prove an answer. There is no ANN index or reranker.
+
+## Grounded Knowledge Reasoning
+
+When the Agent searches stored documents, SkySun asks an evidence evaluator whether the retrieved passages support the whole question. `SUFFICIENT` allows an answer with citations derived from the selected chunks' real filename, path, and index. `INSUFFICIENT` or `AMBIGUOUS` allows one query rewrite and one more retrieval; after at most two retrieval attempts, SkySun stops and reports that evidence is lacking. Invalid evaluator output, unknown or duplicate chunk identifiers, and evaluator errors fail closed without authorizing an answer or citation. The Agent remains responsible for choosing when document search is needed; general and personal-memory answers use their existing paths. The evaluator is model-based and may still make mistakes, and the distance threshold may omit useful evidence.
 
 
 ## Current WSL pgvector installation
