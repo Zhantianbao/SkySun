@@ -106,3 +106,9 @@ class ConversationService:
             except Exception as exc:
                 logger.warning("Memory curation failed: %s", type(exc).__name__)
         return actual_id, reply
+
+    def history(self, conversation_id: str) -> tuple[ConversationMessage, ...]:
+        try:
+            return self._store.get_history(conversation_id)
+        except KeyError as exc:
+            raise ConversationNotFound from exc

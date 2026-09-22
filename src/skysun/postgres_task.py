@@ -160,6 +160,24 @@ class PostgresTaskStore:
             """, (scoped_user_id(), scoped_user_id())).fetchall()
         return tuple(self.get(row[0]) for row in rows)
 
+    def list_tasks(self, limit: int = 50) -> tuple[TaskSnapshot, ...]:
+        """Recent tasks visible to the current owner, newest first."""
+        with self._connect() as conn:
+            rows = conn.execute("""
+                SELECT task_id FROM agent_tasks WHERE user_id = %s
+                ORDER BY created_at DESC, task_id DESC LIMIT %s
+            """, (owner_id(), limit)).fetchall()
+        return tuple(self.get(row[0]) for row in rows)
+
+    def latest_for_conversation(self, conversation_id: UUID) -> TaskSnapshot | None:
+        with self._connect() as conn:
+            row = conn.execute("""
+                SELECT task_id FROM agent_tasks
+                WHERE user_id = %s AND conversation_id = %s
+                ORDER BY created_at DESC, task_id DESC LIMIT 1
+            """, (owner_id(), conversation_id)).fetchone()
+        return self.get(row[0]) if row else None
+
     def transition(self, task_id: UUID, status: TaskStatus,
                    event_type: str | None = None, step_id: str | None = None) -> None:
         with self._connect() as conn:

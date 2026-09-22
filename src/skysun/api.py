@@ -5,10 +5,12 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from skysun.conversation import ConversationNotFound, ConversationService
+from skysun.knowledge import KnowledgeStore
+from skysun.memory import MemoryStore
 from skysun.postgres_users import PostgresUserStore
 from skysun.postgres_observability import PostgresObservabilityStore
 from skysun.observability import FeedbackRating
@@ -28,6 +30,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
+    task_id: str | None = None
+    task_status: str | None = None
 
 
 class UserCreate(BaseModel):
@@ -49,10 +53,21 @@ def build_api(
     tasks: TaskStore | None = None,
     observability: PostgresObservabilityStore | None = None,
     allow_legacy_unauthenticated: bool = False,
+    memory: MemoryStore | None = None,
+    knowledge: KnowledgeStore | None = None,
 ) -> FastAPI:
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
-    app = FastAPI(title="SkySun", version="1.2.0", lifespan=lifespan)
+    app = FastAPI(title="SkySun", version="1.3.0", lifespan=lifespan)
+
+    @app.middleware("http")
+    async def api_prefix(request: Request, call_next):
+        """Keep legacy URLs while the web client uses same-origin /api URLs."""
+        if request.scope["path"].startswith("/api/"):
+            request.scope["skysun_api"] = True
+            request.scope["path"] = request.scope["path"][4:]
+            request.scope["raw_path"] = request.scope["path"].encode()
+        return await call_next(request)
 
     def identify(authorization: str | None = Header(default=None)) -> Actor:
         if users is None:
@@ -79,7 +94,10 @@ def build_api(
                     request.message,
                     str(request.conversation_id) if request.conversation_id else None,
                 )
-            return ChatResponse(conversation_id=conversation_id, reply=reply)
+                task = tasks.latest_for_conversation(UUID(conversation_id)) if tasks else None
+            return ChatResponse(conversation_id=conversation_id, reply=reply,
+                                task_id=str(task.task_id) if task else None,
+                                task_status=task.status.value if task else None)
         except ConversationNotFound as exc:
             raise HTTPException(
                 status_code=404,
@@ -100,6 +118,56 @@ def build_api(
         if user is None:
             raise HTTPException(status_code=401, detail="Invalid authentication")
         return {"user_id": str(user.user_id), "username": user.username, "role": user.role.value}
+
+    @app.get("/conversations/{conversation_id}/messages")
+    def conversation_messages(conversation_id: UUID,
+                              actor: Actor = Depends(identify)) -> list[dict]:
+        try:
+            with actor_scope(actor):
+                messages = conversations.history(str(conversation_id))
+        except ConversationNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        return [{"role": item.role, "content": item.content} for item in messages]
+
+    @app.get("/memory")
+    def personal_memories(limit: int = Query(default=20, ge=1, le=20),
+                          actor: Actor = Depends(identify)) -> list[dict]:
+        if memory is None:
+            raise HTTPException(status_code=503, detail="Memory store unavailable")
+        with actor_scope(actor):
+            rows = memory.list_memories(limit)
+        return [{"id": str(row.id), "key": row.key, "content": row.content,
+                 "category": row.category,
+                 "source_conversation_id": str(row.source_conversation_id)
+                 if row.source_conversation_id else None,
+                 "created_at": row.created_at.isoformat(),
+                 "updated_at": row.updated_at.isoformat()} for row in rows]
+
+    @app.get("/knowledge/documents")
+    def knowledge_documents(limit: int = Query(default=100, ge=1, le=200),
+                            actor: Actor = Depends(identify)) -> list[dict]:
+        if knowledge is None:
+            raise HTTPException(status_code=503, detail="Knowledge store unavailable")
+        with actor_scope(actor):
+            rows = knowledge.list_documents(limit)
+        return [{"id": str(row.id), "source_name": row.source_name,
+                 "source_path": row.source_path,
+                 "scope": "global" if row.owner_id is None else "personal",
+                 "updated_at": row.updated_at.isoformat()} for row in rows]
+
+    @app.get("/tasks")
+    def task_list(limit: int = Query(default=50, ge=1, le=200),
+                  actor: Actor = Depends(identify)) -> list[dict]:
+        if tasks is None:
+            raise HTTPException(status_code=503, detail="Task store unavailable")
+        with actor_scope(actor):
+            rows = tasks.list_tasks(limit)
+        return [{"task_id": str(row.task_id), "conversation_id": str(row.conversation_id)
+                 if row.conversation_id else None, "goal": row.goal,
+                 "status": row.status.value, "created_at": row.created_at.isoformat(),
+                 "updated_at": row.updated_at.isoformat(),
+                 "steps": [{"step_id": step.step_id, "state": step.state.value}
+                           for step in row.steps]} for row in rows]
 
     @app.post("/admin/users", status_code=201)
     def create_user(request: UserCreate, actor: Actor = Depends(identify)) -> dict:

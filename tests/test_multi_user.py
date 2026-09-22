@@ -276,3 +276,38 @@ def test_api_bearer_roles_and_cross_user_rejection(platform):
     assert users.authenticate(created.json()["token"]).user_id == new_id
     with psycopg.connect(users._database_url) as conn:
         conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (new_id,))
+
+
+def test_web_read_endpoints_keep_user_data_isolated(platform):
+    users, conversations, memory, tasks, knowledge, accounts = platform
+    _, (alice, alice_token), (bob, bob_token) = accounts
+    path = "/test/" + uuid4().hex + "/alice.md"
+    with _scope(alice):
+        conversation_id = conversations.create()
+        conversations.append_exchange(conversation_id, "private question", "private answer")
+        memory.remember("web_preference", "Prefers green", "preference")
+        task = tasks.create("Private web task", UUID(conversation_id), ())
+        knowledge.save_document(path, "alice.md", "hash-web",
+                                (KnowledgeChunkInput("Alice document", (1.0,) + (0.0,) * 383),))
+
+    class Agent:
+        def reply(self, message, history=(), conversation_id=None):
+            return "Hello"
+
+    client = TestClient(build_api(ConversationService(Agent(), conversations), users=users,
+                                  tasks=tasks, memory=memory, knowledge=knowledge))
+    ah = {"Authorization": f"Bearer {alice_token}"}
+    bh = {"Authorization": f"Bearer {bob_token}"}
+    assert client.get("/api/me", headers=ah).status_code == 200
+    assert client.get("/api/tasks").status_code == 401
+    assert any(row["task_id"] == str(task.task_id) for row in client.get("/api/tasks", headers=ah).json())
+    assert all(row["task_id"] != str(task.task_id) for row in client.get("/api/tasks", headers=bh).json())
+    assert any(row["key"] == "web_preference" for row in client.get("/api/memory", headers=ah).json())
+    assert all(row["key"] != "web_preference" for row in client.get("/api/memory", headers=bh).json())
+    assert any(row["source_path"] == path for row in client.get("/api/knowledge/documents", headers=ah).json())
+    assert all(row["source_path"] != path for row in client.get("/api/knowledge/documents", headers=bh).json())
+    assert client.get(f"/api/conversations/{conversation_id}/messages", headers=ah).json() == [
+        {"role": "user", "content": "private question"},
+        {"role": "assistant", "content": "private answer"},
+    ]
+    assert client.get(f"/api/conversations/{conversation_id}/messages", headers=bh).status_code == 404

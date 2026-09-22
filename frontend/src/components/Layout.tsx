@@ -1,0 +1,93 @@
+import {
+  Activity,
+  BookOpenText,
+  Brain,
+  LogOut,
+  MessageCircle,
+  Shield,
+  Sun,
+  Workflow,
+} from "lucide-react";
+import { NavLink, Outlet } from "react-router-dom";
+import { useAuth } from "../stores/auth";
+
+const navigation = [
+  { to: "/chat", label: "对话", icon: MessageCircle },
+  { to: "/tasks", label: "任务", icon: Workflow },
+  { to: "/memory", label: "记忆", icon: Brain },
+  { to: "/knowledge", label: "知识", icon: BookOpenText },
+];
+
+export function Layout() {
+  const { user, logout } = useAuth();
+  const items =
+    user?.role === "ADMIN"
+      ? [...navigation, { to: "/admin", label: "管理", icon: Activity }]
+      : navigation;
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <NavLink to="/chat" className="brand">
+          <span className="brand-icon">
+            <Sun size={22} strokeWidth={1.8} />
+          </span>
+          <span>
+            SkySun<small>智能工作台</small>
+          </span>
+        </NavLink>
+        <div className="nav-label">工作空间</div>
+        <nav className="nav-list" aria-label="主导航">
+          {items.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `nav-item ${isActive ? "active" : ""}`
+              }
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="sidebar-bottom">
+          <div className="identity-card">
+            <span className="avatar">{user?.username[0].toUpperCase()}</span>
+            <span className="identity-name">
+              {user?.username}
+              <small>
+                {user?.role === "ADMIN" ? (
+                  <>
+                    <Shield size={12} /> 管理员
+                  </>
+                ) : (
+                  "个人空间"
+                )}
+              </small>
+            </span>
+          </div>
+          <button className="logout" onClick={logout} title="退出登录">
+            <LogOut size={18} />
+          </button>
+        </div>
+      </aside>
+      <main className="main-content">
+        <Outlet />
+      </main>
+      <nav className="mobile-nav" aria-label="移动导航">
+        {items.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              `mobile-nav-item ${isActive ? "active" : ""}`
+            }
+          >
+            <Icon size={20} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </div>
+  );
+}

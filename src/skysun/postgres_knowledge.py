@@ -112,6 +112,17 @@ class PostgresKnowledgeStore:
             ).fetchone()
         return KnowledgeDocument(*row) if row else None
 
+    def list_documents(self, limit: int = 100) -> tuple[KnowledgeDocument, ...]:
+        """List public documents and documents owned by this user."""
+        with self._transaction() as conn:
+            rows = conn.execute(
+                f"SELECT {_DOCUMENT_COLUMNS} FROM knowledge_documents "
+                "WHERE owner_id IS NULL OR owner_id = %s "
+                "ORDER BY updated_at DESC, id DESC LIMIT %s",
+                (private_knowledge_owner(), limit),
+            ).fetchall()
+        return tuple(KnowledgeDocument(*row) for row in rows)
+
     def save_document(
         self,
         source_path: str,

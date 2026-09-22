@@ -1,8 +1,12 @@
 """Application composition root."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import FileResponse
 
 from skysun.api import build_api
 from skysun.config import load_settings
@@ -24,6 +28,17 @@ from skysun.postgres_observability import PostgresObservabilityStore
 from skysun.observability import ResponseEvaluator
 from skysun.postgres_users import PostgresUserStore
 from skysun.workflow_agent import WorkflowAgent
+
+
+class WebStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or scope.get("skysun_api") or "." in Path(path).name:
+                raise
+            return FileResponse(Path(self.directory) / "index.html")
+        return response
 
 
 def create_app(
@@ -74,5 +89,10 @@ def create_app(
         agent.recover_unfinished()
         yield
 
-    return build_api(ConversationService(agent, store, curation), lifespan=lifespan,
-                     users=users, tasks=task_store, observability=observability)
+    app = build_api(ConversationService(agent, store, curation), lifespan=lifespan,
+                    users=users, tasks=task_store, observability=observability,
+                    memory=memory_store, knowledge=knowledge_store)
+    web_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if web_dist.is_dir():
+        app.mount("/", WebStaticFiles(directory=web_dist, html=True), name="web")
+    return app

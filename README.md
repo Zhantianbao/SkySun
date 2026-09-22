@@ -1,4 +1,4 @@
-# SkySun v1.2
+# SkySun v1.3
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -15,7 +15,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.9.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.9.0) — Agent Workflow & Task Planning.
 - [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime.
 - [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform.
-- [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System (this version).
+- [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System.
+- [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP (this version).
 
 ## Local setup
 
@@ -82,6 +83,23 @@ Every Agent request now has a persistent task ID, including requests handled by 
 Response evaluations combine workflow verification and validated grounding with a bounded DeepSeek review of claims against selected document passages. They report a 0–100 score, `PASS`, `REVIEW`, or `FAIL`, and reasons. A review that cannot be parsed or completed becomes `REVIEW`; a score is an advisory signal, not proof that an answer is true. Requests without document evidence are marked for review rather than automatically certified. Evaluations and traces remain linked to their owner and task.
 
 Administrators can read `GET /admin/metrics`, `GET /admin/traces`, and `GET /admin/evaluations`; ordinary users receive 403. Metrics include task success rate, average request/tool/workflow duration, tool failure rate, verification failures, task count, and user activity. An authenticated user can submit `POST /tasks/{task_id}/feedback` with `{"rating":"POSITIVE"}` or `{"rating":"NEGATIVE","comment":"..."}` for their own final response. Feedback stores the response hash and can be updated by the same user. Cross-user feedback is rejected.
+
+## Web Application MVP
+
+The responsive React application in `frontend/` provides token login, chat with Markdown and cited sources, recent tasks and steps, personal memories, visible knowledge-document sources, and an administrator-only observability view. The username and token are checked against `GET /me`; the token is held in browser session storage and cleared when authentication expires. The current conversation ID is kept per user in local storage, and completed turns reload from PostgreSQL after refresh. The interface does not create users or ingest documents; administrators create users through the existing API, and document ingestion remains explicit through the CLI.
+
+Build the web application with Node.js 20.19+ or 22.12+ before starting FastAPI:
+
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+cd ..
+python -m uvicorn skysun.main:create_app --factory
+```
+
+Open `http://127.0.0.1:8000`. FastAPI serves `frontend/dist` when present. Existing API URLs remain available; the web application uses equivalent `/api/...` URLs on the same origin. For frontend development, run `npm run dev` in `frontend/` alongside FastAPI on port 8000; Vite proxies `/api` requests to that server. `VITE_API_BASE_URL` can override the API prefix for a custom deployment. Do not put bearer tokens in build-time environment variables or version control.
 
 
 ## Current WSL pgvector installation
