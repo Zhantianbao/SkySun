@@ -1,6 +1,8 @@
 """SkySun's HTTP contract, independent of LangChain types."""
 
 import logging
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
@@ -23,8 +25,11 @@ class ChatResponse(BaseModel):
     reply: str
 
 
-def build_api(conversations: ConversationService) -> FastAPI:
-    app = FastAPI(title="SkySun", version="0.9.0")
+def build_api(
+    conversations: ConversationService,
+    lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
+) -> FastAPI:
+    app = FastAPI(title="SkySun", version="1.0.0", lifespan=lifespan)
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest) -> ChatResponse:

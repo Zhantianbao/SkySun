@@ -1,4 +1,4 @@
-# SkySun v0.9
+# SkySun v1.0
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -12,7 +12,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.6.0) — Persistent document knowledge and vector RAG.
 - [v0.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.7.0) — Grounded Knowledge Reasoning.
 - [v0.8.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.8.0) — Agent Memory & Tool Reliability.
-- [v0.9.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.9.0) — Agent Workflow & Task Planning (this version).
+- [v0.9.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.9.0) — Agent Workflow & Task Planning.
+- [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime (this version).
 
 ## Local setup
 
@@ -61,6 +62,10 @@ Agent tools now return structured, sanitized errors for invalid arguments and ex
 Simple requests still use the direct Agent path. Requests with explicit multi-step instructions use a bounded DeepSeek-generated plan of at most five ordered steps. Each step records its ID, required capabilities, dependencies, result, tool status, and state (`PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, or `SKIPPED`). Required-step failure stops later steps; the workflow layer uses the existing Agent tools and does not add another retry loop.
 
 Before returning a workflow answer, SkySun verifies that required steps completed, named tools were actually used, and document-search steps have sufficient grounded evidence and validated sources. Missing evidence or unresolved failures produce a safe response. Task and step IDs and workflow status are available in execution metadata and concise logs; the HTTP API remains unchanged. Planning is selected by a conservative multi-step phrase heuristic, so some complex requests may still use the direct Agent path.
+
+## Persistent Agent Runtime
+
+Multi-step requests now create PostgreSQL task records before planning. The plan, conversation reference, step results, validated source metadata, and a concise lifecycle event log survive process restarts. At application startup, unfinished tasks with a saved plan are resumed from their successful steps when the next step is still pending. An interrupted in-flight step is marked failed for manual review to avoid repeating a possible side effect. Planning interrupted before a plan was saved fails safely. Tasks can enter `WAITING_APPROVAL` through an optional approval policy; there is no approval UI yet. Simple requests still use the direct Agent path.
 
 
 ## Current WSL pgvector installation

@@ -1,5 +1,7 @@
 """Application composition root."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from skysun.api import build_api
@@ -16,6 +18,7 @@ from skysun.memory_curator import MemoryCurator, MemoryCurationService
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 from skysun.postgres_memory import PostgresMemoryStore
+from skysun.postgres_task import PostgresTaskStore
 from skysun.workflow_agent import WorkflowAgent
 
 
@@ -43,12 +46,20 @@ def create_app(
         knowledge_store = postgres_knowledge
     if embeddings is None:
         embeddings = SentenceTransformerEmbeddingProvider()
+    task_store = PostgresTaskStore(database_url)
+    task_store.initialize_schema()
     model = create_deepseek(settings)
     direct_agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
     agent = WorkflowAgent(
         direct_agent, LangChainTaskPlanner(model),
         ("reason", "count_words", "recall_memories", "remember_memory", "forget_memory", "search_knowledge"),
+        task_store=task_store,
     )
     curator = curator or LangChainMemoryCurator(model)
     curation = MemoryCurationService(curator, memory_store)
-    return build_api(ConversationService(agent, store, curation))
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        agent.recover_unfinished()
+        yield
+
+    return build_api(ConversationService(agent, store, curation), lifespan=lifespan)
