@@ -19,6 +19,7 @@ from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 from skysun.postgres_memory import PostgresMemoryStore
 from skysun.postgres_task import PostgresTaskStore
+from skysun.postgres_users import PostgresUserStore
 from skysun.workflow_agent import WorkflowAgent
 
 
@@ -32,6 +33,10 @@ def create_app(
     """Build the app; normal runtime initializes all PostgreSQL stores."""
     settings = load_settings()
     database_url = settings.database_url.get_secret_value()
+    users = PostgresUserStore(database_url)
+    users.initialize_schema()
+    if settings.skysun_admin_token is not None:
+        users.bootstrap_admin(settings.skysun_admin_token.get_secret_value())
     if store is None:
         postgres_store = PostgresConversationStore(database_url)
         postgres_store.initialize_schema()
@@ -62,4 +67,5 @@ def create_app(
         agent.recover_unfinished()
         yield
 
-    return build_api(ConversationService(agent, store, curation), lifespan=lifespan)
+    return build_api(ConversationService(agent, store, curation), lifespan=lifespan,
+                     users=users, tasks=task_store)

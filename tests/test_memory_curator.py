@@ -125,7 +125,7 @@ def test_curator_failure_keeps_http_reply_and_persisted_conversation() -> None:
     conversations = InMemoryConversationStore()
     client = TestClient(build_api(ConversationService(
         ReplyAgent(), conversations, MemoryCurationService(curator, store)
-    )))
+    ), allow_legacy_unauthenticated=True))
     response = client.post("/chat", json={"message": "My editor is PyCharm."})
     assert response.status_code == 200
     body = response.json()

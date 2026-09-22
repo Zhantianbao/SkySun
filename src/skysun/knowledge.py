@@ -14,6 +14,7 @@ class KnowledgeDocument:
     content_hash: str
     created_at: datetime
     updated_at: datetime
+    owner_id: UUID | None = None
 
 
 @dataclass(frozen=True)

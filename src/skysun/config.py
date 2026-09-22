@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     skysun_model: str = Field(default="deepseek-flash", min_length=1)
     database_url: SecretStr
+    skysun_admin_token: SecretStr | None = None
 
     @field_validator("deepseek_api_key", "database_url")
     @classmethod

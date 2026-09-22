@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import uuid4
 
 from skysun.agent import Agent
+from skysun.user_identity import owner_id
 
 if TYPE_CHECKING:
     from skysun.memory_curator import MemoryCurationService
@@ -39,6 +40,7 @@ class InMemoryConversationStore:
 
     def __init__(self) -> None:
         self._messages: dict[str, list[ConversationMessage]] = {}
+        self._owners: dict[str, object] = {}
         self._lock = RLock()
 
     def create(self, conversation_id: str | None = None) -> str:
@@ -47,14 +49,19 @@ class InMemoryConversationStore:
             if conversation_id in self._messages:
                 raise ValueError("Conversation already exists")
             self._messages[conversation_id] = []
+            self._owners[conversation_id] = owner_id()
             return conversation_id
 
     def get_history(self, conversation_id: str) -> tuple[ConversationMessage, ...]:
         with self._lock:
+            if self._owners[conversation_id] != owner_id():
+                raise KeyError(conversation_id)
             return tuple(self._messages[conversation_id])
 
     def append_exchange(self, conversation_id: str, user: str, assistant: str) -> None:
         with self._lock:
+            if self._owners[conversation_id] != owner_id():
+                raise KeyError(conversation_id)
             history = self._messages[conversation_id]
             history.extend(
                 (

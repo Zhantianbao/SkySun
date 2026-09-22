@@ -10,6 +10,8 @@ from pgvector import Vector
 from pgvector.psycopg import register_vector
 
 from skysun.embeddings import EMBEDDING_DIMENSION
+from skysun.postgres_users import ensure_user_schema
+from skysun.user_identity import private_knowledge_owner
 from skysun.knowledge import (
     IngestionResult,
     KnowledgeChunkInput,
@@ -17,7 +19,7 @@ from skysun.knowledge import (
     KnowledgeSearchResult,
 )
 
-_DOCUMENT_COLUMNS = "id, source_path, source_name, content_hash, created_at, updated_at"
+_DOCUMENT_COLUMNS = "id, source_path, source_name, content_hash, created_at, updated_at, owner_id"
 
 
 def _validate_vector(values: tuple[float, ...]) -> Vector:
@@ -50,6 +52,7 @@ class PostgresKnowledgeStore:
     def initialize_schema(self) -> None:
         """Create only the v0.6 tables; an administrator must enable pgvector first."""
         with self._transaction(register=False) as conn:
+            ensure_user_schema(conn)
             present = conn.execute(
                 "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
             ).fetchone()
@@ -83,12 +86,29 @@ class PostgresKnowledgeStore:
                 )
                 """
             )
+            conn.execute("""
+                ALTER TABLE knowledge_documents ADD COLUMN IF NOT EXISTS owner_id UUID
+                REFERENCES skysun_users(user_id)
+            """)
+            conn.execute("""
+                ALTER TABLE knowledge_documents
+                DROP CONSTRAINT IF EXISTS knowledge_documents_source_path_key
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_global_path_idx
+                ON knowledge_documents (source_path) WHERE owner_id IS NULL
+            """)
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_owner_path_idx
+                ON knowledge_documents (owner_id, source_path) WHERE owner_id IS NOT NULL
+            """)
 
     def get_by_path(self, source_path: str) -> KnowledgeDocument | None:
         with self._transaction() as conn:
             row = conn.execute(
-                f"SELECT {_DOCUMENT_COLUMNS} FROM knowledge_documents WHERE source_path = %s",
-                (source_path,),
+                f"SELECT {_DOCUMENT_COLUMNS} FROM knowledge_documents "
+                "WHERE source_path = %s AND owner_id IS NOT DISTINCT FROM %s",
+                (source_path, private_knowledge_owner()),
             ).fetchone()
         return KnowledgeDocument(*row) if row else None
 
@@ -103,10 +123,12 @@ class PostgresKnowledgeStore:
         if not chunks:
             raise ValueError("Knowledge document must have at least one chunk")
         vectors = tuple(_validate_vector(chunk.embedding) for chunk in chunks)
+        user_id = private_knowledge_owner()
         with self._transaction() as conn:
             existing = conn.execute(
-                "SELECT id, content_hash FROM knowledge_documents WHERE source_path = %s FOR UPDATE",
-                (source_path,),
+                "SELECT id, content_hash FROM knowledge_documents "
+                "WHERE source_path = %s AND owner_id IS NOT DISTINCT FROM %s FOR UPDATE",
+                (source_path, user_id),
             ).fetchone()
             if existing and existing[1] == content_hash:
                 return IngestionResult(existing[0], source_path, 0, "unchanged")
@@ -130,10 +152,10 @@ class PostgresKnowledgeStore:
                 conn.execute(
                     """
                     INSERT INTO knowledge_documents
-                        (id, source_path, source_name, content_hash)
-                    VALUES (%s, %s, %s, %s)
+                    (id, source_path, source_name, content_hash, owner_id)
+                    VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (document_id, source_path, source_name, content_hash),
+                    (document_id, source_path, source_name, content_hash, user_id),
                 )
                 status = "ingested"
             for index, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True)):
@@ -151,8 +173,9 @@ class PostgresKnowledgeStore:
         """Delete an explicitly selected document and cascade to its chunks."""
         with self._transaction() as conn:
             row = conn.execute(
-                "DELETE FROM knowledge_documents WHERE source_path = %s RETURNING id",
-                (source_path,),
+                "DELETE FROM knowledge_documents WHERE source_path = %s "
+                "AND owner_id IS NOT DISTINCT FROM %s RETURNING id",
+                (source_path, private_knowledge_owner()),
             ).fetchone()
         return row is not None
 
@@ -176,9 +199,10 @@ class PostgresKnowledgeStore:
                 FROM knowledge_chunks AS c
                 JOIN knowledge_documents AS d ON d.id = c.document_id
                 WHERE c.embedding <=> %s <= %s
+                  AND (d.owner_id IS NULL OR d.owner_id = %s)
                 ORDER BY cosine_distance ASC, d.source_path, c.chunk_index
                 LIMIT %s
                 """,
-                (vector, vector, max_cosine_distance, limit),
+                (vector, vector, max_cosine_distance, private_knowledge_owner(), limit),
             ).fetchall()
         return tuple(KnowledgeSearchResult(*row) for row in rows)

@@ -9,6 +9,7 @@ from skysun.conversation import ConversationMessage
 from skysun.langchain_agent import LangChainAgent
 from skysun.planner import PlanStep, TaskPlan, TaskPlanner, needs_planning
 from skysun.task_runtime import TaskSnapshot, TaskStatus, TaskStore
+from skysun.user_identity import Actor, Role, actor_scope, system_scope
 from skysun.verification import VerificationResult, VerificationStatus, WorkflowVerifier
 from skysun.workflow import StepOutcome, StepRecord, StepState, WorkflowExecutor, WorkflowRun
 
@@ -204,15 +205,18 @@ class WorkflowAgent:
     def recover_unfinished(self) -> None:
         if not self._task_store:
             return
-        for task in self._task_store.list_unfinished():
-            if task.status in (TaskStatus.CREATED, TaskStatus.PLANNING):
-                self._task_store.complete(task.task_id, TaskStatus.FAILED,
-                                          "Planning was interrupted.")
-            elif task.status is not TaskStatus.WAITING_APPROVAL:
-                try:
-                    self.resume_task(task.task_id)
-                except ApprovalPending:
-                    pass
-                except Exception as error:
-                    logger.warning("Task recovery failed task_id=%s error=%s",
-                                   task.task_id, type(error).__name__)
+        with system_scope():
+            unfinished = self._task_store.list_unfinished()
+        for task in unfinished:
+            with actor_scope(Actor(task.user_id, Role.USER)):
+                if task.status in (TaskStatus.CREATED, TaskStatus.PLANNING):
+                    self._task_store.complete(task.task_id, TaskStatus.FAILED,
+                                              "Planning was interrupted.")
+                elif task.status is not TaskStatus.WAITING_APPROVAL:
+                    try:
+                        self.resume_task(task.task_id)
+                    except ApprovalPending:
+                        pass
+                    except Exception as error:
+                        logger.warning("Task recovery failed task_id=%s error=%s",
+                                       task.task_id, type(error).__name__)

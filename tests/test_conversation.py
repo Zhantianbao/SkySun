@@ -55,7 +55,8 @@ def test_store_and_service_keep_conversations_isolated() -> None:
 def test_api_continues_and_creates_separate_conversations() -> None:
     agent = RecordingAgent()
     client = TestClient(
-        build_api(ConversationService(agent, InMemoryConversationStore()))
+        build_api(ConversationService(agent, InMemoryConversationStore()),
+                  allow_legacy_unauthenticated=True)
     )
 
     first = client.post("/chat", json={"message": "I like Python"}).json()

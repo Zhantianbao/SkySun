@@ -1,6 +1,7 @@
 from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 
 from skysun.api import build_api
 from skysun.conversation import ConversationMessage, ConversationService, InMemoryConversationStore
@@ -18,7 +19,13 @@ class StubAgent:
 
 
 def make_client(agent: StubAgent) -> TestClient:
-    return TestClient(build_api(ConversationService(agent, InMemoryConversationStore())))
+    return TestClient(build_api(ConversationService(agent, InMemoryConversationStore()),
+                                allow_legacy_unauthenticated=True))
+
+
+def test_api_requires_identity_store_by_default() -> None:
+    with pytest.raises(RuntimeError, match="authenticated user store"):
+        build_api(ConversationService(StubAgent(), InMemoryConversationStore()))
 
 
 def test_chat_contract_and_agent_boundary() -> None:
@@ -56,7 +63,8 @@ def test_chat_hides_agent_error() -> None:
             raise RuntimeError("private provider failure")
 
     client = TestClient(
-        build_api(ConversationService(FailingAgent(), InMemoryConversationStore()))
+        build_api(ConversationService(FailingAgent(), InMemoryConversationStore()),
+                  allow_legacy_unauthenticated=True)
     )
     response = client.post("/chat", json={"message": "hello"})
 
@@ -70,7 +78,8 @@ def test_agent_key_error_is_not_mistaken_for_missing_conversation() -> None:
             raise KeyError("provider data missing")
 
     client = TestClient(
-        build_api(ConversationService(FailingAgent(), InMemoryConversationStore()))
+        build_api(ConversationService(FailingAgent(), InMemoryConversationStore()),
+                  allow_legacy_unauthenticated=True)
     )
     response = client.post("/chat", json={"message": "hello"})
 

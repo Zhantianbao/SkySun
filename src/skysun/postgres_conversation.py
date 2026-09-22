@@ -5,6 +5,8 @@ from uuid import UUID, uuid4
 import psycopg
 
 from skysun.conversation import ConversationMessage
+from skysun.postgres_users import ensure_user_schema
+from skysun.user_identity import LEGACY_USER_ID, owner_id
 
 
 class PostgresConversationStore:
@@ -22,6 +24,7 @@ class PostgresConversationStore:
     def initialize_schema(self) -> None:
         """Create the v0.3 tables if absent, preserving all existing rows."""
         with self._connect() as conn:
+            ensure_user_schema(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -41,6 +44,11 @@ class PostgresConversationStore:
                 )
                 """
             )
+            conn.execute(f"""
+                ALTER TABLE conversations ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL
+                DEFAULT '{LEGACY_USER_ID}' REFERENCES skysun_users(user_id)
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS conversations_user_idx ON conversations (user_id, id)")
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS conversation_messages_conversation_id_id_idx
@@ -52,8 +60,8 @@ class PostgresConversationStore:
         conversation_id = UUID(conversation_id) if conversation_id else uuid4()
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO conversations (id) VALUES (%s)",
-                (conversation_id,),
+                "INSERT INTO conversations (id, user_id) VALUES (%s, %s)",
+                (conversation_id, owner_id()),
             )
         return str(conversation_id)
 
@@ -61,8 +69,8 @@ class PostgresConversationStore:
         identifier = UUID(conversation_id)
         with self._connect() as conn:
             exists = conn.execute(
-                "SELECT 1 FROM conversations WHERE id = %s",
-                (identifier,),
+                "SELECT 1 FROM conversations WHERE id = %s AND user_id = %s",
+                (identifier, owner_id()),
             ).fetchone()
             if exists is None:
                 raise KeyError(conversation_id)
@@ -81,6 +89,9 @@ class PostgresConversationStore:
         """Commit both messages together or roll both back on any error."""
         identifier = UUID(conversation_id)
         with self._connect() as conn:
+            if conn.execute("SELECT 1 FROM conversations WHERE id = %s AND user_id = %s",
+                            (identifier, owner_id())).fetchone() is None:
+                raise KeyError(conversation_id)
             conn.execute(
                 """
                 INSERT INTO conversation_messages (conversation_id, role, content)

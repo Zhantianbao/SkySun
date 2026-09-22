@@ -1,6 +1,7 @@
 from typing import Any, Sequence
-from uuid import UUID
+from uuid import UUID, uuid4
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -116,7 +117,15 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
         InMemoryConversationStore(), curator=NoOpCurator(),
         knowledge_store=EmptyKnowledgeStore(), embeddings=FakeEmbeddings(),
     ))
-    response = client.post("/chat", json={"message": "Count the words"})
+    user, token = main.PostgresUserStore("postgresql:///skysun_test").create_user(
+        "test_" + uuid4().hex[:12]
+    )
+    try:
+        response = client.post("/chat", json={"message": "Count the words"},
+                               headers={"Authorization": f"Bearer {token}"})
+    finally:
+        with psycopg.connect("postgresql:///skysun_test") as conn:
+            conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (user.user_id,))
 
     assert response.status_code == 200
     assert response.json()["reply"] == "Count: 3"

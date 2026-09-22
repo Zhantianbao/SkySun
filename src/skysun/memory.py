@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Literal, Protocol
 from uuid import UUID
 
+from skysun.user_identity import LEGACY_USER_ID
+
 _KEY_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,79}")
 _SECRET_TERMS = re.compile(
     r"\b(?:password|passphrase|api[\s_-]?key|access[\s_-]?token|"
@@ -35,6 +37,15 @@ class PersonalMemory:
     content: str
     category: str | None
     source_conversation_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+    user_id: UUID = LEGACY_USER_ID
+
+
+@dataclass(frozen=True)
+class GlobalMemory:
+    key: str
+    content: str
     created_at: datetime
     updated_at: datetime
 

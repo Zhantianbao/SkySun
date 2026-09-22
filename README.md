@@ -1,4 +1,4 @@
-# SkySun v1.0
+# SkySun v1.1
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -13,7 +13,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.7.0) — Grounded Knowledge Reasoning.
 - [v0.8.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.8.0) — Agent Memory & Tool Reliability.
 - [v0.9.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.9.0) — Agent Workflow & Task Planning.
-- [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime (this version).
+- [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime.
+- [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform (this version).
 
 ## Local setup
 
@@ -24,7 +25,7 @@ python -m pip install 'torch==2.7.1+cpu' --index-url https://download.pytorch.or
 python -m pip install -e '.[test]'
 ```
 
-PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL` and `DEEPSEEK_API_KEY` locally using `.env.example` as a template; never commit `.env`.
+PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL`, `DEEPSEEK_API_KEY`, and a randomly generated `SKYSUN_ADMIN_TOKEN` of at least 32 characters locally using `.env.example` as a template; never commit `.env`. The admin token provisions the `legacy_admin` account at startup. Existing single-user records belong only to this account after migration.
 
 Start the API:
 
@@ -66,6 +67,12 @@ Before returning a workflow answer, SkySun verifies that required steps complete
 ## Persistent Agent Runtime
 
 Multi-step requests now create PostgreSQL task records before planning. The plan, conversation reference, step results, validated source metadata, and a concise lifecycle event log survive process restarts. At application startup, unfinished tasks with a saved plan are resumed from their successful steps when the next step is still pending. An interrupted in-flight step is marked failed for manual review to avoid repeating a possible side effect. Planning interrupted before a plan was saved fails safely. Tasks can enter `WAITING_APPROVAL` through an optional approval policy; there is no approval UI yet. Simple requests still use the direct Agent path.
+
+## Multi-User Agent Platform
+
+HTTP requests use `Authorization: Bearer <token>`. The administrator creates users with `POST /admin/users` using a JSON body such as `{"username":"alice","role":"USER"}`. The response returns the new user's token once; SkySun stores only its hash. `GET /me` reports the authenticated identity. Users can access their own conversations, personal memories through the Agent, tasks, and task events. `GET /admin/summary` reports system counts to administrators without exposing other users' private content. The `/chat` request and response shapes remain unchanged apart from the required authorization header.
+
+Personal memories are keyed per user. Global memories are held separately for administrator-managed system information and are never returned by personal-memory retrieval. Existing document knowledge remains globally visible; documents saved under an authenticated user context are private to that user. The local ingestion CLI still creates global documents. Existing single-user conversations, memories, and tasks are assigned to `legacy_admin` during idempotent schema migration. Tokens are local bearer credentials; external OAuth and token rotation UI are not included.
 
 
 ## Current WSL pgvector installation

@@ -1,4 +1,4 @@
-"""PostgreSQL implementation of SkySun's global single-user memory store."""
+"""PostgreSQL personal memories scoped to users, with separate global memories."""
 
 import re
 from collections.abc import Iterator
@@ -7,10 +7,12 @@ from uuid import UUID, uuid4
 
 import psycopg
 
-from skysun.memory import MemoryChange, PersonalMemory, normalize_key, secret_like_memory
+from skysun.memory import GlobalMemory, MemoryChange, PersonalMemory, normalize_key, secret_like_memory
 from skysun.errors import RetryableToolError
+from skysun.postgres_users import ensure_user_schema
+from skysun.user_identity import LEGACY_USER_ID, owner_id, require_admin
 
-_COLUMNS = "id, memory_key, content, category, source_conversation_id, created_at, updated_at"
+_COLUMNS = "id, memory_key, content, category, source_conversation_id, created_at, updated_at, user_id"
 
 
 def _is_transient(error: psycopg.OperationalError) -> bool:
@@ -56,6 +58,7 @@ class PostgresMemoryStore:
     def initialize_schema(self) -> None:
         """Create the table idempotently without changing existing data."""
         with self._transaction() as conn:
+            ensure_user_schema(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS personal_memories (
@@ -69,6 +72,22 @@ class PostgresMemoryStore:
                 )
                 """
             )
+            conn.execute(f"""
+                ALTER TABLE personal_memories ADD COLUMN IF NOT EXISTS user_id UUID NOT NULL
+                DEFAULT '{LEGACY_USER_ID}' REFERENCES skysun_users(user_id)
+            """)
+            conn.execute("ALTER TABLE personal_memories DROP CONSTRAINT IF EXISTS personal_memories_memory_key_key")
+            conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS personal_memories_user_key_idx
+                ON personal_memories (user_id, memory_key)
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS global_memories (
+                    memory_key TEXT PRIMARY KEY, content TEXT NOT NULL CHECK (content <> ''),
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
 
     def remember(
         self,
@@ -87,24 +106,24 @@ class PostgresMemoryStore:
         with self._transaction() as conn:
             row = conn.execute(
                 f"""
-                INSERT INTO personal_memories (id, memory_key, content, category, source_conversation_id)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (memory_key) DO UPDATE SET
+                INSERT INTO personal_memories (id, memory_key, content, category, source_conversation_id, user_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, memory_key) DO UPDATE SET
                     content = EXCLUDED.content,
                     category = EXCLUDED.category,
                     source_conversation_id = EXCLUDED.source_conversation_id,
                     updated_at = now()
                 RETURNING {_COLUMNS}
                 """,
-                (uuid4(), key, content, category, source_conversation_id),
+                (uuid4(), key, content, category, source_conversation_id, owner_id()),
             ).fetchone()
         return _memory(row)
 
     def get(self, key: str) -> PersonalMemory | None:
         with self._transaction() as conn:
             row = conn.execute(
-                f"SELECT {_COLUMNS} FROM personal_memories WHERE memory_key = %s",
-                (normalize_key(key),),
+                f"SELECT {_COLUMNS} FROM personal_memories WHERE memory_key = %s AND user_id = %s",
+                (normalize_key(key), owner_id()),
             ).fetchone()
         return _memory(row) if row else None
 
@@ -113,16 +132,16 @@ class PostgresMemoryStore:
             raise ValueError("Memory recall limit must be between 1 and 20")
         with self._transaction() as conn:
             rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM personal_memories ORDER BY updated_at DESC, memory_key LIMIT %s",
-                (limit,),
+                f"SELECT {_COLUMNS} FROM personal_memories WHERE user_id = %s ORDER BY updated_at DESC, memory_key LIMIT %s",
+                (owner_id(), limit),
             ).fetchall()
         return tuple(_memory(row) for row in rows)
 
     def forget(self, key: str) -> bool:
         with self._transaction() as conn:
             row = conn.execute(
-                "DELETE FROM personal_memories WHERE memory_key = %s RETURNING id",
-                (normalize_key(key),),
+                "DELETE FROM personal_memories WHERE memory_key = %s AND user_id = %s RETURNING id",
+                (normalize_key(key), owner_id()),
             ).fetchone()
         return row is not None
 
@@ -149,9 +168,9 @@ class PostgresMemoryStore:
         params = tuple(value for token in tokens for value in (f"%{token}%",) * 3)
         with self._transaction() as conn:
             rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM personal_memories WHERE {clauses} "
+                f"SELECT {_COLUMNS} FROM personal_memories WHERE user_id = %s AND ({clauses}) "
                 "ORDER BY updated_at DESC, memory_key LIMIT %s",
-                (*params, limit),
+                (owner_id(), *params, limit),
             ).fetchall()
         return tuple(_memory(row) for row in rows) if rows else self.list_memories(limit)
 
@@ -181,18 +200,44 @@ class PostgresMemoryStore:
                     conn.execute(
                         """
                         INSERT INTO personal_memories
-                            (id, memory_key, content, category, source_conversation_id)
-                        VALUES (%s, %s, %s, %s, %s)
-                        ON CONFLICT (memory_key) DO UPDATE SET
+                            (id, memory_key, content, category, source_conversation_id, user_id)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (user_id, memory_key) DO UPDATE SET
                             content = EXCLUDED.content,
                             category = EXCLUDED.category,
                             source_conversation_id = EXCLUDED.source_conversation_id,
                             updated_at = now()
                         """,
-                        (uuid4(), change.key, change.content, change.category, source_conversation_id),
+                        (uuid4(), change.key, change.content, change.category, source_conversation_id, owner_id()),
                     )
                 else:
                     conn.execute(
-                        "DELETE FROM personal_memories WHERE memory_key = %s",
-                        (change.key,),
+                        "DELETE FROM personal_memories WHERE memory_key = %s AND user_id = %s",
+                        (change.key, owner_id()),
                     )
+
+    def remember_global(self, key: str, content: str) -> GlobalMemory:
+        require_admin()
+        key = normalize_key(key)
+        content = content.strip()
+        if not content or secret_like_memory(key, content):
+            raise ValueError("Invalid global memory")
+        with self._transaction() as conn:
+            row = conn.execute("""
+                INSERT INTO global_memories (memory_key, content) VALUES (%s, %s)
+                ON CONFLICT (memory_key) DO UPDATE SET
+                    content = EXCLUDED.content, updated_at = now()
+                RETURNING memory_key, content, created_at, updated_at
+            """, (key, content)).fetchone()
+        return GlobalMemory(*row)
+
+    def list_global_memories(self, limit: int = 20) -> tuple[GlobalMemory, ...]:
+        require_admin()
+        if not 1 <= limit <= 20:
+            raise ValueError("Global memory limit must be between 1 and 20")
+        with self._transaction() as conn:
+            rows = conn.execute("""
+                SELECT memory_key, content, created_at, updated_at
+                FROM global_memories ORDER BY updated_at DESC LIMIT %s
+            """, (limit,)).fetchall()
+        return tuple(GlobalMemory(*row) for row in rows)

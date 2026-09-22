@@ -9,6 +9,7 @@ from uuid import UUID
 from skysun.conversation import ConversationMessage
 from skysun.planner import TaskPlan
 from skysun.workflow import StepRecord
+from skysun.user_identity import LEGACY_USER_ID
 
 
 class TaskStatus(str, Enum):
@@ -52,6 +53,7 @@ class TaskSnapshot:
     history: tuple[ConversationMessage, ...] = ()
     steps: tuple[StepRecord, ...] = ()
     answer: str | None = None
+    user_id: UUID = LEGACY_USER_ID
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,7 @@ class TaskEvent:
     step_id: str | None = None
     tool_name: str | None = None
     created_at: datetime | None = None
+    user_id: UUID = LEGACY_USER_ID
 
 
 class TaskStore(Protocol):
