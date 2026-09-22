@@ -8,7 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from skysun.conversation import ConversationMessage
-from skysun.memory import MemoryChange, MemoryStore, PersonalMemory, normalize_key, secret_like_memory
+from skysun.memory import MemoryCandidate, MemoryChange, MemoryStore, PersonalMemory, normalize_key, secret_like_memory
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,9 @@ class MemoryDecision(BaseModel):
     )
     category: str | None = Field(
         default=None, description="Optional category such as preference, goal, constraint, or project."
+    )
+    importance: Literal["low", "medium", "high"] = Field(
+        default="medium", description="Expected long-term usefulness of this candidate."
     )
 
 
@@ -74,6 +77,34 @@ def validate_plan(plan: MemoryPlan) -> tuple[MemoryChange, ...]:
     return tuple(changes)
 
 
+def create_candidates(plan: MemoryPlan, source_conversation_id: UUID) -> tuple[MemoryCandidate, ...]:
+    """Represent proposed upserts separately from confirmed personal memories."""
+    validate_plan(plan)
+    return tuple(
+        MemoryCandidate(
+            key=normalize_key(decision.key or ""),
+            content=(decision.content or "").strip(),
+            category=(decision.category or "").strip() or None,
+            importance=decision.importance,
+            source_conversation_id=source_conversation_id,
+        )
+        for decision in plan.decisions if decision.action == "upsert"
+    )
+
+
+def accept_candidate(
+    candidate: MemoryCandidate, current_memories: tuple[PersonalMemory, ...]
+) -> bool:
+    """Reject low-value and duplicate facts before writing confirmed memory."""
+    if candidate.importance == "low":
+        return False
+    normalized_content = " ".join(candidate.content.casefold().split())
+    return not any(
+        " ".join(memory.content.casefold().split()) == normalized_content
+        for memory in current_memories
+    )
+
+
 class MemoryCurationService:
     """Best-effort curation after conversation persistence.
 
@@ -102,6 +133,27 @@ class MemoryCurationService:
         if not isinstance(plan, MemoryPlan):
             plan = MemoryPlan.model_validate(plan)
         changes = validate_plan(plan)
-        logger.info("Memory curator validated %d changes", len(changes))
-        if changes:
-            self._store.apply_changes(changes, context.conversation_id)
+        candidates = create_candidates(plan, context.conversation_id)
+        accepted: list[MemoryChange] = []
+        seen = list(context.current_memories)
+        accepted_candidates: list[MemoryCandidate] = []
+        for change in changes:
+            if change.action == "delete":
+                accepted.append(change)
+                seen = [memory for memory in seen if memory.key != change.key]
+                continue
+            candidate = next(item for item in candidates if item.key == change.key and item.content == change.content)
+            existing = self._store.get(candidate.key)
+            if existing is not None and all(item.key != existing.key for item in seen):
+                seen.append(existing)
+            duplicate_in_plan = any(
+                item.key == candidate.key
+                or " ".join(item.content.casefold().split()) == " ".join(candidate.content.casefold().split())
+                for item in accepted_candidates
+            )
+            if not duplicate_in_plan and accept_candidate(candidate, tuple(seen)):
+                accepted.append(change)
+                accepted_candidates.append(candidate)
+        logger.info("Memory curator accepted %d changes", len(accepted))
+        if accepted:
+            self._store.apply_changes(tuple(accepted), context.conversation_id)

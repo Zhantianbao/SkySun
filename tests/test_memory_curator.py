@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 from skysun.api import build_api
 from skysun.conversation import ConversationService, InMemoryConversationStore
 from skysun.memory import MemoryChange, PersonalMemory
-from skysun.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
+from skysun.memory_curator import (
+    MemoryCurationService, MemoryDecision, MemoryPlan, create_candidates,
+)
 
 
 class RecordingStore:
@@ -19,6 +21,9 @@ class RecordingStore:
 
     def list_memories(self, limit: int = 20) -> tuple[PersonalMemory, ...]:
         return tuple(self.items.values())[:limit]
+
+    def get(self, key: str) -> PersonalMemory | None:
+        return self.items.get(key)
 
     def apply_changes(self, changes: tuple[MemoryChange, ...], source_conversation_id: UUID) -> None:
         self.batches.append((changes, source_conversation_id))
@@ -150,12 +155,50 @@ def test_langchain_curator_uses_typed_json_output_without_network() -> None:
             return {"decisions": [{"action": "upsert", "key": "preferred_editor", "content": "PyCharm"}]}
 
     class FakeModel:
-        def with_structured_output(self, schema, method):
+        def with_structured_output(self, schema, method, include_raw):
             assert schema is MemoryPlan
             assert method == "json_mode"
+            assert include_raw is True
             return FakeRunnable()
 
     plan = LangChainMemoryCurator(FakeModel()).decide(
         CurationContext("My editor is PyCharm.", (), (), uuid4())
     )
     assert plan.decisions[0].key == "preferred_editor"
+
+
+def test_candidate_creation_keeps_importance_and_conversation_source() -> None:
+    source = uuid4()
+    plan = MemoryPlan(decisions=[
+        MemoryDecision(action="upsert", key="Preferred Editor", content="  PyCharm  ",
+                       category="preference", importance="high"),
+        MemoryDecision(action="ignore"),
+    ])
+    candidates = create_candidates(plan, source)
+    assert len(candidates) == 1
+    assert (candidates[0].key, candidates[0].content, candidates[0].category) == (
+        "preferred_editor", "PyCharm", "preference"
+    )
+    assert candidates[0].importance == "high"
+    assert candidates[0].source_conversation_id == source
+
+
+def test_curator_rejects_low_value_and_duplicate_candidates() -> None:
+    store = RecordingStore()
+    curator = ScriptedCurator([
+        MemoryPlan(decisions=[
+            MemoryDecision(action="upsert", key="preferred_editor", content="PyCharm",
+                           category="preference", importance="high"),
+            MemoryDecision(action="upsert", key="today_snack", content="A biscuit",
+                           importance="low"),
+        ]),
+        MemoryPlan(decisions=[
+            MemoryDecision(action="upsert", key="editor_choice", content=" pycharm ",
+                           category="tool", importance="high"),
+        ]),
+    ])
+    service = MemoryCurationService(curator, store)
+    service.process("I prefer PyCharm.", (), str(uuid4()))
+    service.process("I still prefer PyCharm.", (), str(uuid4()))
+    assert tuple(store.items) == ("preferred_editor",)
+    assert len(store.batches) == 1

@@ -25,7 +25,9 @@ def recall_memories(store: MemoryStore, query: str = "") -> str:
     memories = store.search_memories(query, limit=20) if query else store.list_memories(limit=20)
     if not memories:
         return "No personal memories are stored."
-    return "\n".join(f"{memory.key}: {memory.content}" for memory in memories)
+    return "Confirmed personal memories (not document knowledge):\n" + "\n".join(
+        f"{memory.key}: {memory.content}" for memory in memories
+    )
 
 
 def forget_memory(store: MemoryStore, key: str) -> str:

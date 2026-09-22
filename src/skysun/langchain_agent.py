@@ -17,6 +17,7 @@ from skysun.knowledge_grounding import (
 )
 from skysun.langchain_knowledge_grounding import LangChainEvidenceEvaluator, LangChainQueryRewriter
 from skysun.memory import MemoryStore
+from skysun.tool_reliability import configure_validation, is_tool_failure, run_tool
 from skysun.tools import (
     count_words,
     forget_memory,
@@ -53,8 +54,25 @@ class LangChainAgent:
         conversation_id: str | None = None,
     ) -> str:
         """Run one Agent invocation with tools scoped to this conversation."""
-        tools = [count_words]
+        tool_failures: set[str] = set()
+
+        def record_tool_result(name: str, result: str) -> str:
+            if is_tool_failure(result):
+                tool_failures.add(name)
+            else:
+                tool_failures.discard(name)
+            return result
+
+        @tool("count_words")
+        def count_words_tool(text: str) -> str:
+            """Count whitespace-separated words in text."""
+            return record_tool_result("count_words", run_tool(
+                "count_words", lambda: count_words(text)
+            ))
+
+        tools = [configure_validation(count_words_tool, lambda result: tool_failures.add("count_words"))]
         knowledge_outcome: GroundedKnowledge | None = None
+        memory_read_failure: str | None = None
         if self._memory_store is not None:
             memory_store = self._memory_store
             source_id = UUID(conversation_id) if conversation_id else None
@@ -62,19 +80,33 @@ class LangChainAgent:
             @tool("remember_memory")
             def remember_memory_tool(key: str, content: str, category: str = "") -> str:
                 """Save a durable user fact, preference, or goal. Reuse a stable snake_case semantic key to update. Never save passwords, API keys, tokens, private keys, or credentials."""
-                return remember_memory(memory_store, key, content, category or None, source_id)
+                return record_tool_result("remember_memory", run_tool("remember_memory", lambda: remember_memory(
+                    memory_store, key, content, category or None, source_id
+                )))
 
             @tool("recall_memories")
             def recall_memories_tool(query: str = "") -> str:
                 """Retrieve up to 20 personal memories for user-specific questions. Pass relevant keywords for basic lexical lookup; empty query lists recent memories. Never invent absent memories."""
-                return recall_memories(memory_store, query)
+                nonlocal memory_read_failure
+                if memory_read_failure is not None:
+                    return memory_read_failure
+                result = run_tool("recall_memories", lambda: recall_memories(memory_store, query), retries=1)
+                if is_tool_failure(result):
+                    memory_read_failure = result
+                return record_tool_result("recall_memories", result)
 
             @tool("forget_memory")
             def forget_memory_tool(key: str) -> str:
                 """Delete a stored personal memory by its semantic key when the user explicitly asks to forget it."""
-                return forget_memory(memory_store, key)
+                return record_tool_result("forget_memory", run_tool(
+                    "forget_memory", lambda: forget_memory(memory_store, key)
+                ))
 
-            tools.extend([remember_memory_tool, recall_memories_tool, forget_memory_tool])
+            tools.extend(configure_validation(
+                item, lambda result, name=item.name: tool_failures.add(name)
+            ) for item in (
+                remember_memory_tool, recall_memories_tool, forget_memory_tool
+            ))
         if self._knowledge_store is not None and self._embeddings is not None:
             knowledge_store = self._knowledge_store
             embeddings = self._embeddings
@@ -83,14 +115,20 @@ class LangChainAgent:
             def search_knowledge_tool(query: str, limit: int = 4) -> str:
                 """Find validated evidence for a question about stored documents. Call once per user question. The application controls any retry. Do not use for personal memory or general facts."""
                 nonlocal knowledge_outcome
-                if knowledge_outcome is None:
-                    evaluator = self._evidence_evaluator or LangChainEvidenceEvaluator(self._model)
-                    rewriter = self._query_rewriter or LangChainQueryRewriter(self._model)
-                    service = GroundedKnowledgeService(knowledge_store, embeddings, evaluator, rewriter)
-                    knowledge_outcome = search_knowledge(service, message, limit)
-                return format_knowledge_evidence(knowledge_outcome)
+                def execute() -> str:
+                    nonlocal knowledge_outcome
+                    if knowledge_outcome is None:
+                        evaluator = self._evidence_evaluator or LangChainEvidenceEvaluator(self._model)
+                        rewriter = self._query_rewriter or LangChainQueryRewriter(self._model)
+                        service = GroundedKnowledgeService(knowledge_store, embeddings, evaluator, rewriter)
+                        knowledge_outcome = search_knowledge(service, message, limit)
+                    return format_knowledge_evidence(knowledge_outcome)
 
-            tools.append(search_knowledge_tool)
+                return record_tool_result("search_knowledge", run_tool("search_knowledge", execute))
+
+            tools.append(configure_validation(
+                search_knowledge_tool, lambda result: tool_failures.add("search_knowledge")
+            ))
         agent = create_agent(
             model=self._model,
             tools=tools,
@@ -106,6 +144,12 @@ class LangChainAgent:
         content = final_messages[-1].content
         if not isinstance(content, str) or not content:
             raise RuntimeError("Agent returned no text answer")
+        if "recall_memories" in tool_failures:
+            return "I couldn't access personal memory, so I can't verify that answer right now."
+        if {"remember_memory", "forget_memory"} & tool_failures:
+            return "I couldn't update personal memory right now."
+        if tool_failures:
+            return "I couldn't complete the requested tool operation right now."
         if knowledge_outcome is not None:
             if knowledge_outcome.status is not GroundingStatus.SUFFICIENT:
                 return "The current knowledge base does not provide enough evidence to answer."

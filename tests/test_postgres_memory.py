@@ -9,6 +9,7 @@ import pytest
 
 from skysun.conversation import ConversationMessage
 from skysun.memory import MemoryChange, normalize_key
+from skysun.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_memory import PostgresMemoryStore
 
@@ -102,6 +103,16 @@ def test_memory_sql_error_omits_database_detail(monkeypatch: pytest.MonkeyPatch)
     assert "sensitive database detail" not in str(exc.value)
 
 
+def test_only_connection_failures_are_retryable() -> None:
+    from types import SimpleNamespace
+    from skysun.postgres_memory import _is_transient
+
+    assert _is_transient(SimpleNamespace(sqlstate=None))
+    assert _is_transient(SimpleNamespace(sqlstate="08006"))
+    assert _is_transient(SimpleNamespace(sqlstate="57P01"))
+    assert not _is_transient(SimpleNamespace(sqlstate="28P01"))
+
+
 def test_curator_batch_is_atomic_and_lexical_recall_is_bounded(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
@@ -138,3 +149,30 @@ def test_obvious_secret_label_is_rejected_by_storage(
     with pytest.raises(ValueError, match="Secret-like memory rejected"):
         memory.remember("api_key", "FAKE-TEST-TOKEN")
     assert memory.get("api_key") is None
+
+
+def test_accepted_candidate_persists_with_source_and_duplicate_is_skipped(
+    stores: tuple[PostgresMemoryStore, PostgresConversationStore],
+) -> None:
+    memory, _ = stores
+    key = f"v08_test_preference_{uuid4().hex[:8]}"
+    source = uuid4()
+
+    class Curator:
+        def decide(self, context):
+            return MemoryPlan(decisions=[MemoryDecision(
+                action="upsert", key=key, content="Prefers concise answers",
+                category="preference", importance="high",
+            )])
+
+    service = MemoryCurationService(Curator(), memory)
+    try:
+        service.process("Please keep answers concise.", (), str(source))
+        first = memory.get(key)
+        assert first.content == "Prefers concise answers"
+        assert first.source_conversation_id == source
+        service.process("Keep answers concise.", (), str(uuid4()))
+        assert memory.get(key).id == first.id
+        assert memory.get(key).updated_at == first.updated_at
+    finally:
+        memory.forget(key)

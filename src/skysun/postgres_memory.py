@@ -8,8 +8,16 @@ from uuid import UUID, uuid4
 import psycopg
 
 from skysun.memory import MemoryChange, PersonalMemory, normalize_key, secret_like_memory
+from skysun.errors import RetryableToolError
 
 _COLUMNS = "id, memory_key, content, category, source_conversation_id, created_at, updated_at"
+
+
+def _is_transient(error: psycopg.OperationalError) -> bool:
+    """Retry lost connections and server restarts, not authentication failures."""
+    return error.sqlstate is None or error.sqlstate.startswith("08") or error.sqlstate in {
+        "57P01", "57P02", "57P03",
+    }
 
 
 def _memory(row: tuple) -> PersonalMemory:
@@ -23,6 +31,11 @@ class PostgresMemoryStore:
     def _connect(self) -> psycopg.Connection:
         try:
             return psycopg.connect(self._database_url, connect_timeout=5)
+        except psycopg.OperationalError as error:
+            message = "Cannot connect to SkySun PostgreSQL; check DATABASE_URL and server availability"
+            if _is_transient(error):
+                raise RetryableToolError(message) from None
+            raise RuntimeError(message) from None
         except psycopg.Error:
             raise RuntimeError(
                 "Cannot connect to SkySun PostgreSQL; check DATABASE_URL and server availability"
@@ -33,6 +46,10 @@ class PostgresMemoryStore:
         try:
             with self._connect() as conn:
                 yield conn
+        except psycopg.OperationalError as error:
+            if _is_transient(error):
+                raise RetryableToolError("Personal memory PostgreSQL operation failed") from None
+            raise RuntimeError("Personal memory PostgreSQL operation failed") from None
         except psycopg.Error:
             raise RuntimeError("Personal memory PostgreSQL operation failed") from None
 

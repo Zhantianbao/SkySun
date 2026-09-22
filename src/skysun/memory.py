@@ -47,6 +47,17 @@ class MemoryChange:
     category: str | None = None
 
 
+@dataclass(frozen=True)
+class MemoryCandidate:
+    """A proposed durable fact; it is not confirmed memory until accepted and saved."""
+
+    key: str
+    content: str
+    category: str | None
+    importance: Literal["low", "medium", "high"]
+    source_conversation_id: UUID
+
+
 class MemoryStore(Protocol):
     def remember(
         self,

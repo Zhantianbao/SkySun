@@ -91,3 +91,14 @@ def test_memory_tools_through_agent_and_separate_conversations() -> None:
     _, answer = service.chat("recall")
     assert answer == "No personal memories are stored."
     assert {"count_words", "remember_memory", "recall_memories", "forget_memory"} <= set(model._tool_names)
+
+
+def test_preference_from_prior_conversation_is_labeled_as_personal_memory() -> None:
+    memory = FakeMemoryStore()
+    memory.remember("response_style", "Prefers concise answers", "preference")
+    model = FakeMemoryCallingModel()
+    service = ConversationService(LangChainAgent(model, memory), InMemoryConversationStore())
+    _, answer = service.chat("recall")
+    assert "Confirmed personal memories" in answer
+    assert "response_style: Prefers concise answers" in answer
+    assert "document knowledge" in answer

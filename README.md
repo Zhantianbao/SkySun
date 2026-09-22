@@ -1,4 +1,4 @@
-# SkySun v0.7
+# SkySun v0.8
 
 SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
 
@@ -10,7 +10,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v0.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.4.0) — Durable personal memory and memory tools.
 - [v0.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.5.0) — Automatic memory curation.
 - [v0.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.6.0) — Persistent document knowledge and vector RAG.
-- v0.7.0 — Grounded Knowledge Reasoning (this version).
+- [v0.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v0.7.0) — Grounded Knowledge Reasoning.
+- v0.8.0 — Agent Memory & Tool Reliability (this version).
 
 ## Local setup
 
@@ -47,6 +48,12 @@ Chunking targets 1,000 characters with 150 characters of overlap and prefers new
 ## Grounded Knowledge Reasoning
 
 When the Agent searches stored documents, SkySun asks an evidence evaluator whether the retrieved passages support the whole question. `SUFFICIENT` allows an answer with citations derived from the selected chunks' real filename, path, and index. `INSUFFICIENT` or `AMBIGUOUS` allows one query rewrite and one more retrieval; after at most two retrieval attempts, SkySun stops and reports that evidence is lacking. Invalid evaluator output, unknown or duplicate chunk identifiers, and evaluator errors fail closed without authorizing an answer or citation. The Agent remains responsible for choosing when document search is needed; general and personal-memory answers use their existing paths. The evaluator is model-based and may still make mistakes, and the distance threshold may omit useful evidence.
+
+## Agent Memory & Tool Reliability
+
+Raw conversation turns remain in conversation history. After a successful turn, the memory curator proposes separate candidates with content, category, importance, and source conversation. The application rejects low-value or duplicate candidates before persisting accepted facts as confirmed personal memory. The curator accepts limited JSON formatting variations, retries one parser failure, and discards output that still cannot be validated. Existing explicit remember and forget commands still use the same memory API. Candidate proposals are transient; confirmed memories persist in PostgreSQL. Memory retrieval labels its results as personal memory, separate from document knowledge and citations.
+
+Agent tools now return structured, sanitized errors for invalid arguments and execution failures. Read-only memory retrieval retries once for explicitly transient failures; write tools do not retry automatically. Repeated reads in one turn reuse the same failure. When a tool failure remains unresolved, the Agent returns an explicit safe failure response.
 
 
 ## Current WSL pgvector installation
