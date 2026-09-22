@@ -9,15 +9,33 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import tool
 
 from skysun.conversation import ConversationMessage
+from skysun.embeddings import EmbeddingProvider
 from skysun.identity import SYSTEM_PROMPT
+from skysun.knowledge import KnowledgeStore
 from skysun.memory import MemoryStore
-from skysun.tools import count_words, forget_memory, recall_memories, remember_memory
+from skysun.tools import (
+    count_words,
+    forget_memory,
+    recall_memories,
+    remember_memory,
+    search_knowledge,
+)
 
 
 class LangChainAgent:
-    def __init__(self, model: BaseChatModel, memory_store: MemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        model: BaseChatModel,
+        memory_store: MemoryStore | None = None,
+        knowledge_store: KnowledgeStore | None = None,
+        embeddings: EmbeddingProvider | None = None,
+    ) -> None:
+        if (knowledge_store is None) != (embeddings is None):
+            raise ValueError("Knowledge store and embeddings must be supplied together")
         self._model = model
         self._memory_store = memory_store
+        self._knowledge_store = knowledge_store
+        self._embeddings = embeddings
 
     def reply(
         self,
@@ -38,7 +56,7 @@ class LangChainAgent:
 
             @tool("recall_memories")
             def recall_memories_tool(query: str = "") -> str:
-                """Retrieve up to 20 personal memories for user-specific questions. Pass relevant keywords in query for basic lexical lookup; empty query lists recent memories. Never invent absent memories."""
+                """Retrieve up to 20 personal memories for user-specific questions. Pass relevant keywords for basic lexical lookup; empty query lists recent memories. Never invent absent memories."""
                 return recall_memories(memory_store, query)
 
             @tool("forget_memory")
@@ -47,6 +65,16 @@ class LangChainAgent:
                 return forget_memory(memory_store, key)
 
             tools.extend([remember_memory_tool, recall_memories_tool, forget_memory_tool])
+        if self._knowledge_store is not None and self._embeddings is not None:
+            knowledge_store = self._knowledge_store
+            embeddings = self._embeddings
+
+            @tool("search_knowledge")
+            def search_knowledge_tool(query: str, limit: int = 4) -> str:
+                """Search stored external documents when the question depends on private notes or documents. Use for document knowledge, not personal memory or general facts. Returns source details. Nearest passages may be unrelated; answer only when the passage supports it, otherwise say the stored knowledge lacks the answer."""
+                return search_knowledge(knowledge_store, embeddings, query, limit)
+
+            tools.append(search_knowledge_tool)
         agent = create_agent(
             model=self._model,
             tools=tools,

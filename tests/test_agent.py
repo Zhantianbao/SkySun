@@ -102,7 +102,20 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
         def decide(self, context):
             return MemoryPlan()
 
-    client = TestClient(main.create_app(InMemoryConversationStore(), curator=NoOpCurator()))
+    class EmptyKnowledgeStore:
+        def search(self, query_embedding, limit=4, max_cosine_distance=0.35):
+            return ()
+
+    class FakeEmbeddings:
+        dimension = 384
+
+        def embed_query(self, text):
+            return (1.0,) + (0.0,) * 383
+
+    client = TestClient(main.create_app(
+        InMemoryConversationStore(), curator=NoOpCurator(),
+        knowledge_store=EmptyKnowledgeStore(), embeddings=FakeEmbeddings(),
+    ))
     response = client.post("/chat", json={"message": "Count the words"})
 
     assert response.status_code == 200
