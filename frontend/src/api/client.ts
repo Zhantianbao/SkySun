@@ -17,7 +17,9 @@ export async function api<T>(
   const response = await fetch(`${base}${path}`, {
     ...options,
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !(options.body instanceof FormData)
+        ? { "Content-Type": "application/json" }
+        : {}),
       Authorization: `Bearer ${token}`,
       ...options.headers,
     },

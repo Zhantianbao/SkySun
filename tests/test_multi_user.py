@@ -11,11 +11,13 @@ from fastapi.testclient import TestClient
 from skysun.api import build_api
 from skysun.conversation import ConversationService
 from skysun.knowledge import KnowledgeChunkInput
+from skysun.knowledge_ingestion import KnowledgeIngestionService
 from skysun.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
 from skysun.planner import TaskPlan
 from skysun.postgres_conversation import PostgresConversationStore
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 from skysun.postgres_memory import PostgresMemoryStore
+from skysun.postgres_observability import PostgresObservabilityStore
 from skysun.postgres_task import PostgresTaskStore
 from skysun.postgres_users import PostgresUserStore
 from skysun.task_runtime import TaskStatus
@@ -311,3 +313,59 @@ def test_web_read_endpoints_keep_user_data_isolated(platform):
         {"role": "assistant", "content": "private answer"},
     ]
     assert client.get(f"/api/conversations/{conversation_id}/messages", headers=bh).status_code == 404
+    assert any(row["conversation_id"] == conversation_id
+               for row in client.get("/api/conversations", headers=ah).json())
+    assert all(row["conversation_id"] != conversation_id
+               for row in client.get("/api/conversations", headers=bh).json())
+
+
+def test_web_upload_and_task_activity_respect_ownership(platform):
+    users, conversations, _, tasks, knowledge, accounts = platform
+    _, (alice, alice_token), (bob, bob_token) = accounts
+    observability = PostgresObservabilityStore(users._database_url)
+    observability.initialize_schema()
+
+    class Embeddings:
+        dimension = 384
+
+        def embed_passages(self, texts):
+            return ((1.0,) + (0.0,) * 383,) * len(texts)
+
+    class Agent:
+        def reply(self, message, history=(), conversation_id=None):
+            return "Hello"
+
+    client = TestClient(build_api(ConversationService(Agent(), conversations), users=users,
+                                  tasks=tasks, knowledge=knowledge,
+                                  ingestion=KnowledgeIngestionService(knowledge, Embeddings()),
+                                  observability=observability))
+    ah = {"Authorization": f"Bearer {alice_token}"}
+    bh = {"Authorization": f"Bearer {bob_token}"}
+    assert client.post("/api/knowledge/documents", headers=ah,
+                       files={"file": ("bad.pdf", b"pdf")}).status_code == 422
+    assert client.post("/api/knowledge/documents", headers=ah,
+                       files={"file": ("bad.md", b"\xff")}).status_code == 422
+    assert client.post("/api/knowledge/documents", headers=ah,
+                       files={"file": ("large.md", b"x" * (2 * 1024 * 1024 + 1))}).status_code == 413
+    uploaded = client.post("/api/knowledge/documents", headers=ah,
+                           files={"file": ("notes.md", b"Alice upload marker", "text/markdown")})
+    assert uploaded.status_code == 201
+    assert uploaded.json()["chunk_count"] == 1
+    repeated = client.post("/api/knowledge/documents", headers=ah,
+                           files={"file": ("notes.md", b"Alice upload marker", "text/markdown")})
+    assert repeated.status_code == 201
+    assert repeated.json()["status"] == "unchanged"
+    assert repeated.json()["document_id"] == uploaded.json()["document_id"]
+    assert any(row["source_path"] == uploaded.json()["source_path"]
+               for row in client.get("/api/knowledge/documents", headers=ah).json())
+    assert all(row["source_path"] != uploaded.json()["source_path"]
+               for row in client.get("/api/knowledge/documents", headers=bh).json())
+    with _scope(alice):
+        task = tasks.create("Activity test", None, ())
+        trace_id = observability.start_trace(task.task_id, "knowledge_retrieval")
+        observability.finish_trace(trace_id, "SUCCESS")
+    activity = client.get(f"/api/tasks/{task.task_id}/activity", headers=ah)
+    assert activity.status_code == 200
+    assert activity.json()[0]["stage"] == "knowledge_retrieval"
+    assert "metadata" not in activity.json()[0]
+    assert client.get(f"/api/tasks/{task.task_id}/activity", headers=bh).status_code == 404

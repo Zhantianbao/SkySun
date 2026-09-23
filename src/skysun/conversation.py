@@ -6,6 +6,7 @@ normal runtime. Neither store is long-term personal memory.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from threading import RLock
 from typing import TYPE_CHECKING, Literal, Protocol
 from uuid import uuid4
@@ -25,6 +26,14 @@ class ConversationMessage:
     content: str
 
 
+@dataclass(frozen=True)
+class ConversationSummary:
+    conversation_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class ConversationNotFound(Exception):
     """The requested conversation does not exist in this store."""
 
@@ -33,6 +42,7 @@ class ConversationStore(Protocol):
     def create(self, conversation_id: str | None = None) -> str: ...
     def get_history(self, conversation_id: str) -> tuple[ConversationMessage, ...]: ...
     def append_exchange(self, conversation_id: str, user: str, assistant: str) -> None: ...
+    def list_conversations(self, limit: int = 50) -> tuple[ConversationSummary, ...]: ...
 
 
 class InMemoryConversationStore:
@@ -41,6 +51,8 @@ class InMemoryConversationStore:
     def __init__(self) -> None:
         self._messages: dict[str, list[ConversationMessage]] = {}
         self._owners: dict[str, object] = {}
+        self._created: dict[str, datetime] = {}
+        self._updated: dict[str, datetime] = {}
         self._lock = RLock()
 
     def create(self, conversation_id: str | None = None) -> str:
@@ -50,7 +62,21 @@ class InMemoryConversationStore:
                 raise ValueError("Conversation already exists")
             self._messages[conversation_id] = []
             self._owners[conversation_id] = owner_id()
+            self._created[conversation_id] = datetime.now(timezone.utc)
+            self._updated[conversation_id] = self._created[conversation_id]
             return conversation_id
+
+    def list_conversations(self, limit: int = 50) -> tuple[ConversationSummary, ...]:
+        with self._lock:
+            rows = (
+                ConversationSummary(identifier,
+                                    next((message.content[:80] for message in messages
+                                          if message.role == "user"), "新对话"),
+                                    self._created[identifier], self._updated[identifier])
+                for identifier, messages in self._messages.items()
+                if self._owners[identifier] == owner_id()
+            )
+            return tuple(sorted(rows, key=lambda item: item.updated_at, reverse=True)[:limit])
 
     def get_history(self, conversation_id: str) -> tuple[ConversationMessage, ...]:
         with self._lock:
@@ -69,6 +95,7 @@ class InMemoryConversationStore:
                     ConversationMessage("assistant", assistant),
                 )
             )
+            self._updated[conversation_id] = datetime.now(timezone.utc)
 
 
 class ConversationService:
@@ -112,3 +139,6 @@ class ConversationService:
             return self._store.get_history(conversation_id)
         except KeyError as exc:
             raise ConversationNotFound from exc
+
+    def list_conversations(self, limit: int = 50) -> tuple[ConversationSummary, ...]:
+        return self._store.list_conversations(limit)

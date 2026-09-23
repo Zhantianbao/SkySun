@@ -1,7 +1,8 @@
 import { FormEvent, useState } from "react";
-import { ArrowRight, KeyRound, Sun } from "lucide-react";
+import { ArrowRight, KeyRound } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../stores/auth";
+import { BrandLogo } from "../components/BrandLogo";
 
 export function Login() {
   const { user, login } = useAuth();
@@ -24,13 +25,9 @@ export function Login() {
   }
   return (
     <div className="login-page">
-      <div className="login-accent" aria-hidden="true" />
       <div className="login-panel">
         <div className="login-brand">
-          <span className="brand-icon">
-            <Sun size={25} />
-          </span>
-          SkySun
+          <BrandLogo size={110} />
         </div>
         <div className="login-copy">
           <span className="eyebrow">WELCOME BACK</span>
@@ -80,7 +77,7 @@ export function Login() {
         <div className="visual-orbit orbit-one" />
         <div className="visual-orbit orbit-two" />
         <div className="visual-sun">
-          <Sun size={72} strokeWidth={1} />
+          <BrandLogo size={220} />
         </div>
         <div className="visual-caption">知识有迹可循 · 记忆持续生长</div>
       </div>

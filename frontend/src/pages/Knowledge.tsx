@@ -1,10 +1,13 @@
+import { ChangeEvent, FormEvent, useState } from "react";
 import {
   BookOpenText,
   CalendarDays,
   FileText,
   Globe2,
   LockKeyhole,
+  UploadCloud,
 } from "lucide-react";
+import { api } from "../api/client";
 import {
   EmptyState,
   ErrorNotice,
@@ -13,19 +16,86 @@ import {
   formatDate,
 } from "../components/Ui";
 import { useResource } from "../hooks/useResource";
-import type { Document } from "../types";
+import { useAuth } from "../stores/auth";
+import type { Document, UploadResult } from "../types";
 
 export function Knowledge() {
+  const { token } = useAuth();
   const { data, loading, error, refresh } = useResource<Document[]>(
     "/knowledge/documents",
   );
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [uploaded, setUploaded] = useState<UploadResult | null>(null);
+
+  function selectFile(event: ChangeEvent<HTMLInputElement>) {
+    setFile(event.target.files?.[0] || null);
+    setUploadError("");
+    setUploaded(null);
+  }
+
+  async function upload(event: FormEvent) {
+    event.preventDefault();
+    if (!file || !token || uploading) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setUploadError("文件不能超过 2 MiB");
+      return;
+    }
+    setUploading(true);
+    setUploadError("");
+    setUploaded(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const result = await api<UploadResult>("/knowledge/documents", token, {
+        method: "POST",
+        body,
+      });
+      setUploaded(result);
+      setFile(null);
+      await refresh();
+    } catch (cause) {
+      setUploadError(cause instanceof Error ? cause.message : "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader
         eyebrow="KNOWLEDGE BASE"
         title="知识文档"
-        description="Agent 可检索的文档来源。个人文档只对你可见。"
+        description="上传自己的文档，SkySun 会为你建立可检索的知识来源。"
       />
+      <form className="upload-card" onSubmit={(event) => void upload(event)}>
+        <div className="upload-icon">
+          <UploadCloud size={22} />
+        </div>
+        <div className="upload-copy">
+          <strong>添加个人知识</strong>
+          <span>支持 UTF-8 的 .md、.markdown、.txt 文档，最大 2 MiB。仅你可检索。</span>
+          <input
+            aria-label="选择知识文档"
+            type="file"
+            accept=".md,.markdown,.txt,text/plain,text/markdown"
+            onChange={selectFile}
+            disabled={uploading}
+          />
+          {file && <small>已选择：{file.name}</small>}
+        </div>
+        <button className="primary-button upload-button" disabled={!file || uploading}>
+          {uploading ? "正在上传并建立索引…" : "上传文档"}
+        </button>
+      </form>
+      {uploadError && <ErrorNotice message={uploadError} />}
+      {uploaded && (
+        <div className="upload-success" role="status">
+          上传完成，已建立 {uploaded.chunk_count} 个知识片段。
+        </div>
+      )}
+      <div className="knowledge-list-heading">可用文档</div>
       {loading ? (
         <Loading />
       ) : error ? (
@@ -33,7 +103,7 @@ export function Knowledge() {
       ) : !data?.length ? (
         <EmptyState
           title="还没有知识文档"
-          description="管理员可以使用命令行导入文档，导入后会在这里显示来源。"
+          description="上传文档后，SkySun 可以在对话中检索并引用它。"
         />
       ) : (
         <div className="card-list">

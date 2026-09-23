@@ -56,12 +56,17 @@ class KnowledgeIngestionService:
         if not path.is_file():
             raise ValueError("Knowledge source must be a regular file")
         text = path.read_text(encoding="utf-8").replace("\r\n", "\n").strip()
+        return self.ingest_text(str(path), path.name, text)
+
+    def ingest_text(self, source_path: str, source_name: str, text: str) -> IngestionResult:
+        """Ingest validated text from a file or authenticated web upload."""
+        text = text.replace("\r\n", "\n").strip()
         if not text:
             raise ValueError("Knowledge source is empty")
         content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        existing = self._store.get_by_path(str(path))
+        existing = self._store.get_by_path(source_path)
         if existing is not None and existing.content_hash == content_hash:
-            return IngestionResult(existing.id, str(path), 0, "unchanged")
+            return IngestionResult(existing.id, source_path, 0, "unchanged")
         chunks = chunk_text(text, self._chunk_size, self._chunk_overlap)
         vectors = self._embeddings.embed_passages(chunks)
         if len(vectors) != len(chunks):
@@ -71,5 +76,5 @@ class KnowledgeIngestionService:
             for content, vector in zip(chunks, vectors, strict=True)
         )
         return self._store.save_document(
-            str(path), path.name, content_hash, prepared
+            source_path, source_name, content_hash, prepared
         )

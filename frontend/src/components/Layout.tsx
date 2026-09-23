@@ -5,11 +5,11 @@ import {
   LogOut,
   MessageCircle,
   Shield,
-  Sun,
   Workflow,
 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../stores/auth";
+import { BrandLogo } from "./BrandLogo";
 
 const navigation = [
   { to: "/chat", label: "对话", icon: MessageCircle },
@@ -28,12 +28,7 @@ export function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <NavLink to="/chat" className="brand">
-          <span className="brand-icon">
-            <Sun size={22} strokeWidth={1.8} />
-          </span>
-          <span>
-            SkySun<small>智能工作台</small>
-          </span>
+          <BrandLogo size={110} />
         </NavLink>
         <div className="nav-label">工作空间</div>
         <nav className="nav-list" aria-label="主导航">
@@ -75,6 +70,9 @@ export function Layout() {
         <Outlet />
       </main>
       <nav className="mobile-nav" aria-label="移动导航">
+        <NavLink to="/chat" className="mobile-brand" aria-label="SkySun 首页">
+          <BrandLogo size={43} />
+        </NavLink>
         {items.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}

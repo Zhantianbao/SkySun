@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skysun"
-version = "1.3.0"
+version = "1.4.0"
 description = "SkySun personal AI agent"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115,<1",
+    "python-multipart>=0.0.20,<1",
     "uvicorn>=0.30,<1",
     "langchain>=1,<2",
     "langchain-deepseek>=1,<2",

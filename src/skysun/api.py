@@ -5,11 +5,12 @@ from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from skysun.conversation import ConversationNotFound, ConversationService
 from skysun.knowledge import KnowledgeStore
+from skysun.knowledge_ingestion import KnowledgeIngestionService
 from skysun.memory import MemoryStore
 from skysun.postgres_users import PostgresUserStore
 from skysun.postgres_observability import PostgresObservabilityStore
@@ -55,10 +56,11 @@ def build_api(
     allow_legacy_unauthenticated: bool = False,
     memory: MemoryStore | None = None,
     knowledge: KnowledgeStore | None = None,
+    ingestion: KnowledgeIngestionService | None = None,
 ) -> FastAPI:
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
-    app = FastAPI(title="SkySun", version="1.3.0", lifespan=lifespan)
+    app = FastAPI(title="SkySun", version="1.4.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def api_prefix(request: Request, call_next):
@@ -85,6 +87,10 @@ def build_api(
     def admin(actor: Actor) -> None:
         if actor.role is not Role.ADMIN:
             raise HTTPException(status_code=403, detail="Administrator access required")
+
+    @app.get("/health")
+    def health() -> dict:
+        return {"status": "ok"}
 
     @app.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest, actor: Actor = Depends(identify)) -> ChatResponse:
@@ -129,6 +135,15 @@ def build_api(
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
         return [{"role": item.role, "content": item.content} for item in messages]
 
+    @app.get("/conversations")
+    def conversation_list(limit: int = Query(default=50, ge=1, le=100),
+                          actor: Actor = Depends(identify)) -> list[dict]:
+        with actor_scope(actor):
+            rows = conversations.list_conversations(limit)
+        return [{"conversation_id": row.conversation_id, "title": row.title,
+                 "created_at": row.created_at.isoformat(),
+                 "updated_at": row.updated_at.isoformat()} for row in rows]
+
     @app.get("/memory")
     def personal_memories(limit: int = Query(default=20, ge=1, le=20),
                           actor: Actor = Depends(identify)) -> list[dict]:
@@ -154,6 +169,34 @@ def build_api(
                  "source_path": row.source_path,
                  "scope": "global" if row.owner_id is None else "personal",
                  "updated_at": row.updated_at.isoformat()} for row in rows]
+
+    @app.post("/knowledge/documents", status_code=201)
+    def upload_document(file: UploadFile = File(...),
+                        actor: Actor = Depends(identify)) -> dict:
+        if ingestion is None:
+            raise HTTPException(status_code=503, detail="Knowledge ingestion unavailable")
+        filename = (file.filename or "").replace("\\", "/").split("/")[-1]
+        if not filename or len(filename) > 120 or any(ord(char) < 32 or ord(char) == 127
+                                                       for char in filename) or not filename.lower().endswith(
+                (".md", ".markdown", ".txt")):
+            raise HTTPException(status_code=422, detail="Upload a .md, .markdown, or .txt file")
+        try:
+            content = file.file.read(2 * 1024 * 1024 + 1)
+        finally:
+            file.file.close()
+        if len(content) > 2 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Document exceeds 2 MiB limit")
+        try:
+            text = content.decode("utf-8")
+            source_path = f"upload://{actor.user_id}/{filename}"
+            with actor_scope(actor):
+                result = ingestion.ingest_text(source_path, filename, text)
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=422, detail="Document must be UTF-8 text") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {"document_id": str(result.document_id), "source_path": result.source_path,
+                "chunk_count": result.chunk_count, "status": result.status}
 
     @app.get("/tasks")
     def task_list(limit: int = Query(default=50, ge=1, le=200),
@@ -258,6 +301,19 @@ def build_api(
                  "tool_name": event.tool_name, "user_id": str(event.user_id),
                  "created_at": event.created_at.isoformat() if event.created_at else None}
                 for event in events]
+
+    @app.get("/tasks/{task_id}/activity")
+    def task_activity(task_id: UUID, actor: Actor = Depends(identify)) -> list[dict]:
+        if observability is None:
+            raise HTTPException(status_code=503, detail="Observability unavailable")
+        try:
+            with actor_scope(actor):
+                rows = observability.list_traces(task_id, 100)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Task not found") from exc
+        return [{"stage": row.stage, "status": row.status,
+                 "started_at": row.started_at.isoformat(),
+                 "duration_ms": row.duration_ms} for row in rows]
 
     @app.post("/tasks/{task_id}/feedback")
     def feedback(task_id: UUID, request: FeedbackRequest,

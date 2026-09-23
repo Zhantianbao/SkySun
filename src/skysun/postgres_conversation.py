@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 
-from skysun.conversation import ConversationMessage
+from skysun.conversation import ConversationMessage, ConversationSummary
 from skysun.postgres_users import ensure_user_schema
 from skysun.user_identity import LEGACY_USER_ID, owner_id
 
@@ -84,6 +84,28 @@ class PostgresConversationStore:
                 (identifier,),
             ).fetchall()
         return tuple(ConversationMessage(role, content) for role, content in rows)
+
+    def list_conversations(self, limit: int = 50) -> tuple[ConversationSummary, ...]:
+        with self._connect() as conn:
+            rows = conn.execute("""
+                SELECT c.id, COALESCE(first_message.content, '新对话'),
+                       c.created_at, COALESCE(last_message.created_at, c.created_at)
+                FROM conversations AS c
+                LEFT JOIN LATERAL (
+                    SELECT content FROM conversation_messages
+                    WHERE conversation_id = c.id AND role = 'user'
+                    ORDER BY id ASC LIMIT 1
+                ) AS first_message ON true
+                LEFT JOIN LATERAL (
+                    SELECT created_at FROM conversation_messages
+                    WHERE conversation_id = c.id ORDER BY id DESC LIMIT 1
+                ) AS last_message ON true
+                WHERE c.user_id = %s
+                ORDER BY COALESCE(last_message.created_at, c.created_at) DESC, c.id DESC
+                LIMIT %s
+            """, (owner_id(), limit)).fetchall()
+        return tuple(ConversationSummary(str(row[0]), row[1][:80], row[2], row[3])
+                     for row in rows)
 
     def append_exchange(self, conversation_id: str, user: str, assistant: str) -> None:
         """Commit both messages together or roll both back on any error."""

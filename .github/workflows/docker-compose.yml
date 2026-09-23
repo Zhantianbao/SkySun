@@ -1,0 +1,27 @@
+name: Docker Compose startup
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      POSTGRES_PASSWORD: 0123456789abcdef0123456789abcdef
+      DEEPSEEK_API_KEY: compose-startup-placeholder
+      SKYSUN_ADMIN_TOKEN: compose-startup-placeholder-12345678901234567890
+      SKYSUN_PORT: 8080
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start the stack
+        run: docker compose up --build --detach
+      - name: Check frontend proxy and backend health
+        run: curl --fail --show-error http://127.0.0.1:8080/api/health
+      - name: Show service status on failure
+        if: failure()
+        run: docker compose ps && docker compose logs --no-color --tail=150
+      - name: Stop the stack
+        if: always()
+        run: docker compose down --volumes

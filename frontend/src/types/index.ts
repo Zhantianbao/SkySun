@@ -7,6 +7,24 @@ export type ChatResponse = {
   task_status: string | null;
 };
 export type Message = { role: "user" | "assistant"; content: string };
+export type ConversationSummary = {
+  conversation_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+export type TaskActivity = {
+  stage: string;
+  status: string;
+  started_at: string;
+  duration_ms: number | null;
+};
+export type UploadResult = {
+  document_id: string;
+  source_path: string;
+  chunk_count: number;
+  status: string;
+};
 export type TaskStep = { step_id: string; state: string };
 export type Task = {
   task_id: string;

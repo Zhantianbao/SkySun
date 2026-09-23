@@ -1,12 +1,14 @@
+import { Suspense, lazy } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
-import { Chat } from "./pages/Chat";
-import { Tasks } from "./pages/Tasks";
-import { MemoryPage } from "./pages/Memory";
-import { Knowledge } from "./pages/Knowledge";
-import { Admin } from "./pages/Admin";
 import { AuthProvider, useAuth } from "./stores/auth";
+
+const Chat = lazy(() => import("./pages/Chat").then((module) => ({ default: module.Chat })));
+const Tasks = lazy(() => import("./pages/Tasks").then((module) => ({ default: module.Tasks })));
+const MemoryPage = lazy(() => import("./pages/Memory").then((module) => ({ default: module.MemoryPage })));
+const Knowledge = lazy(() => import("./pages/Knowledge").then((module) => ({ default: module.Knowledge })));
+const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
 
 function Protected({ admin = false }: { admin?: boolean }) {
   const { user, loading } = useAuth();
@@ -20,7 +22,8 @@ export function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<div className="app-loading">正在加载页面…</div>}>
+          <Routes>
           <Route path="/login" element={<Login />} />
           <Route element={<Protected />}>
             <Route path="/chat" element={<Chat />} />
@@ -30,7 +33,8 @@ export function App() {
             <Route path="/admin" element={<Protected admin />} />
           </Route>
           <Route path="*" element={<Navigate to="/chat" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </BrowserRouter>
     </AuthProvider>
   );

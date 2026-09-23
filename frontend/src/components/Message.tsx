@@ -1,5 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
 import { BookOpenText, Sparkles } from "lucide-react";
 import type { Message as MessageType } from "../types";
 
@@ -32,7 +34,7 @@ export function Message({ message }: { message: MessageType }) {
       <div className="message-content">
         <div className="message-author">{assistant ? "SkySun" : "你"}</div>
         <div className="markdown">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>{body}</ReactMarkdown>
         </div>
         {sources.length > 0 && (
           <div className="sources">

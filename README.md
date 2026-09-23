@@ -1,6 +1,24 @@
-# SkySun v1.3
+# SkySun v1.4
 
-SkySun is a personal FastAPI agent with separate conversation history, personal memory, and document knowledge.
+SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
+
+## Architecture
+
+The React and TypeScript frontend calls FastAPI through same-origin `/api` routes. FastAPI authenticates bearer tokens and passes the user context into the existing Agent, memory, task, and knowledge stores. PostgreSQL holds conversations, memories, documents, tasks, and observability records; pgvector searches embedded document passages. A local multilingual E5 model creates embeddings. Existing unprefixed API routes remain available for earlier clients.
+
+## Docker local deployment
+
+Install Docker Engine or Docker Desktop with the Compose plugin. Copy `.env.example` to `.env`, then set a real `DEEPSEEK_API_KEY`, a random `SKYSUN_ADMIN_TOKEN` of at least 32 characters, and a random hexadecimal `POSTGRES_PASSWORD`. Keep `.env` local and use hexadecimal characters for the database password so it can be inserted safely into the PostgreSQL URL.
+
+```bash
+cp .env.example .env
+# Edit .env and fill the three required values.
+docker compose up --build
+```
+
+Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. The backend image downloads the embedding model while building, so the first build requires network access and can take several minutes. The admin token provisions `legacy_admin`; use `POST /api/admin/users` with its bearer token to create ordinary users. The frontend login accepts the username and issued token.
+
+For subsequent starts, use `docker compose up`; use `docker compose down` to stop the stack while preserving the database volume.
 
 ## Versions
 
@@ -16,7 +34,8 @@ SkySun is a personal FastAPI agent with separate conversation history, personal 
 - [v1.0.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.0.0) — Persistent Agent Runtime.
 - [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform.
 - [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System.
-- [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP (this version).
+- [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP.
+- [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment (this version).
 
 ## Local setup
 
@@ -86,7 +105,7 @@ Administrators can read `GET /admin/metrics`, `GET /admin/traces`, and `GET /adm
 
 ## Web Application MVP
 
-The responsive React application in `frontend/` provides token login, chat with Markdown and cited sources, recent tasks and steps, personal memories, visible knowledge-document sources, and an administrator-only observability view. The username and token are checked against `GET /me`; the token is held in browser session storage and cleared when authentication expires. The current conversation ID is kept per user in local storage, and completed turns reload from PostgreSQL after refresh. The interface does not create users or ingest documents; administrators create users through the existing API, and document ingestion remains explicit through the CLI.
+The responsive React application in `frontend/` provides token login, chat with Markdown and cited sources, recent tasks and steps, personal memories, visible knowledge-document sources, and an administrator-only observability view. The username and token are checked against `GET /me`; the token is held in browser session storage and cleared when authentication expires. Completed turns and the conversation list reload from PostgreSQL after refresh. The interface does not create users; administrators create users through the existing API.
 
 Build the web application with Node.js 20.19+ or 22.12+ before starting FastAPI:
 
@@ -100,6 +119,12 @@ python -m uvicorn skysun.main:create_app --factory
 ```
 
 Open `http://127.0.0.1:8000`. FastAPI serves `frontend/dist` when present. Existing API URLs remain available; the web application uses equivalent `/api/...` URLs on the same origin. For frontend development, run `npm run dev` in `frontend/` alongside FastAPI on port 8000; Vite proxies `/api` requests to that server. `VITE_API_BASE_URL` can override the API prefix for a custom deployment. Do not put bearer tokens in build-time environment variables or version control.
+
+## Product experience and knowledge upload
+
+The web chat shows separate user and Agent bubbles, Markdown with highlighted code, source citations, and recent conversations. During a request it polls the current user's task and trace records to show stages such as planning, knowledge retrieval, tool use, verification, and completion. The existing synchronous `/chat` endpoint remains the answer path; token-by-token streaming is not enabled because the persistent Agent workflow returns only after verification and memory curation.
+
+The knowledge page accepts UTF-8 `.md`, `.markdown`, and `.txt` files up to 2 MiB. Uploads pass through the existing chunking and embedding pipeline and become private documents for the authenticated user. Other users cannot list or retrieve their passages. The local CLI continues to create global documents. Uploading a document indexes it; a citation appears when retrieval and evidence verification select supporting passages.
 
 
 ## Current WSL pgvector installation
