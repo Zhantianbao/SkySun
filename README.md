@@ -1,4 +1,4 @@
-# SkySun v1.4
+# SkySun v1.4.1
 
 SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
 
@@ -18,6 +18,8 @@ docker compose up --build
 
 Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. The backend image downloads the embedding model while building, so the first build requires network access and can take several minutes. The admin token provisions `legacy_admin`; use `POST /api/admin/users` with its bearer token to create ordinary users. The frontend login accepts the username and issued token.
 
+The production Nginx container serves the web app at `/` and returns the same app entry point for direct links such as `/chat`. API requests under `/api/` continue to reach FastAPI.
+
 For subsequent starts, use `docker compose up`; use `docker compose down` to stop the stack while preserving the database volume.
 
 ## Versions
@@ -35,7 +37,8 @@ For subsequent starts, use `docker compose up`; use `docker compose down` to sto
 - [v1.1.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.1.0) — Multi-User Agent Platform.
 - [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System.
 - [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP.
-- [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment (this version).
+- [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment.
+- [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix (this version).
 
 ## Local setup
 
