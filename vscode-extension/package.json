@@ -1,0 +1,14 @@
+{
+  "name": "skysun-workspace-awareness",
+  "displayName": "SkySun Workspace Awareness",
+  "description": "Reports the active VS Code workspace to the local SkySun companion only.",
+  "version": "1.6.0",
+  "publisher": "skysun-local",
+  "repository": { "type": "git", "url": "https://github.com/Zhantianbao/SkySun" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "files": ["extension.js", "README.md"],
+  "license": "UNLICENSED"
+}

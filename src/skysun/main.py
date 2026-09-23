@@ -1,5 +1,7 @@
 """Application composition root."""
 
+import asyncio
+from contextlib import suppress
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from skysun.conversation import ConversationService, ConversationStore
 from skysun.deepseek import create_deepseek
 from skysun.deepseek_evaluation import DeepSeekClaimReviewer
 from skysun.devices import PostgresDeviceStore
+from skysun.development import PostgresDevelopmentStore
 from skysun.embeddings import EmbeddingProvider, SentenceTransformerEmbeddingProvider
 from skysun.knowledge import KnowledgeStore
 from skysun.knowledge_ingestion import KnowledgeIngestionService
@@ -77,6 +80,8 @@ def create_app(
     observability.initialize_schema()
     devices = PostgresDeviceStore(database_url)
     devices.initialize_schema()
+    development = PostgresDevelopmentStore(database_url)
+    development.initialize_schema()
     model = create_deepseek(settings)
     direct_agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
     agent = WorkflowAgent(
@@ -91,13 +96,24 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         agent.recover_unfinished()
-        yield
+        development.cleanup()
+        async def prune_expired():
+            while True:
+                await asyncio.sleep(3600)
+                await asyncio.to_thread(development.cleanup)
+        cleanup_task = asyncio.create_task(prune_expired())
+        try:
+            yield
+        finally:
+            cleanup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup_task
 
     app = build_api(ConversationService(agent, store, curation), lifespan=lifespan,
                     users=users, tasks=task_store, observability=observability,
                     memory=memory_store, knowledge=knowledge_store,
                     ingestion=KnowledgeIngestionService(knowledge_store, embeddings),
-                    devices=devices)
+                    devices=devices, development=development)
     web_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if web_dist.is_dir():
         app.mount("/", WebStaticFiles(directory=web_dist, html=True), name="web")

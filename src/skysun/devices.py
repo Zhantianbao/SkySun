@@ -24,6 +24,13 @@ class Device:
     cpu_percent: float | None
     memory_percent: float | None
     disk_percent: float | None
+    project_name: str | None = None
+    git_branch: str | None = None
+    git_modified_count: int | None = None
+    last_activity_at: datetime | None = None
+    vscode_running: bool | None = None
+    codex_active: bool | None = None
+    vscode_workspace: str | None = None
 
 
 class PostgresDeviceStore:
@@ -60,6 +67,16 @@ class PostgresDeviceStore:
                     disk_percent DOUBLE PRECISION CHECK (disk_percent BETWEEN 0 AND 100)
                 )
             """)
+            for column, definition in (
+                ("project_name", "VARCHAR(100)"),
+                ("git_branch", "VARCHAR(255)"),
+                ("git_modified_count", "INTEGER"),
+                ("last_activity_at", "TIMESTAMPTZ"),
+                ("vscode_running", "BOOLEAN"),
+                ("codex_active", "BOOLEAN"),
+                ("vscode_workspace", "VARCHAR(100)"),
+            ):
+                conn.execute(f"ALTER TABLE device_status ADD COLUMN IF NOT EXISTS {column} {definition}")
 
     def register(self, user_id: UUID, name: str, hostname: str, operating_system: str) -> tuple[UUID, str]:
         device_id = uuid4()
@@ -89,7 +106,10 @@ class PostgresDeviceStore:
                 SELECT d.device_id, d.user_id, d.name, d.hostname, d.operating_system,
                        d.created_at, s.last_heartbeat_at,
                        (s.connected_session IS NOT NULL AND s.last_heartbeat_at > now() - interval '90 seconds'),
-                       s.cpu_percent, s.memory_percent, s.disk_percent
+                       s.cpu_percent, s.memory_percent, s.disk_percent,
+                       s.project_name, s.git_branch, s.git_modified_count,
+                       s.last_activity_at, s.vscode_running, s.codex_active,
+                       s.vscode_workspace
                 FROM devices d JOIN device_status s USING (device_id)
                 WHERE d.user_id = %s ORDER BY d.created_at DESC
             """, (user_id,)).fetchall()
@@ -127,3 +147,17 @@ class PostgresDeviceStore:
                 UPDATE device_status SET connected_session = NULL
                 WHERE device_id = %s AND connected_session = %s
             """, (device_id, session_id))
+
+    def update_development(self, device_id: UUID, session_id: UUID, state: dict) -> None:
+        with self._connect() as conn:
+            conn.execute("""
+                UPDATE device_status SET project_name = %s, git_branch = %s,
+                    git_modified_count = %s, last_activity_at = %s,
+                    vscode_running = %s, codex_active = %s,
+                    vscode_workspace = %s
+                WHERE device_id = %s AND connected_session = %s
+            """, (state.get("project_name"), state.get("git_branch"),
+                  state.get("git_modified_count"), state.get("last_activity_at"),
+                  state.get("vscode_running"), state.get("codex_active"),
+                  state.get("vscode_workspace"),
+                  device_id, session_id))

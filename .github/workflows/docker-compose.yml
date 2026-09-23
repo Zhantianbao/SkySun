@@ -29,6 +29,7 @@ jobs:
           docker compose exec -T backend python - <<'PY'
           import json
           import os
+          import base64
           from urllib.request import Request, urlopen
           from websockets.sync.client import connect
 
@@ -43,12 +44,40 @@ jobs:
                        additional_headers={"Authorization": "Bearer " + device["device_token"]}) as ws:
               assert json.loads(ws.recv())["type"] == "connected"
               ws.send(json.dumps({"type": "heartbeat", "cpu_percent": 1,
-                                  "memory_percent": 2, "disk_percent": 3}))
+                                  "memory_percent": 2, "disk_percent": 3,
+                                  "project_name": "SkySun", "git_branch": "main",
+                                  "git_modified_count": 1}))
               assert json.loads(ws.recv())["type"] == "heartbeat_ack"
               with urlopen(Request("http://frontend/api/devices",
                                    headers={"Authorization": bearer})) as response:
                   devices = json.load(response)
               assert devices[0]["online"] and devices[0]["cpu_percent"] == 1
+              assert devices[0]["project_name"] == "SkySun"
+              base = "http://frontend/api/devices/" + device["device_id"]
+              with urlopen(Request(base + "/screenshots", method="POST",
+                                   headers={"Authorization": bearer}, data=b"")) as response:
+                  screenshot = json.load(response)
+              ws.send(json.dumps({"type": "heartbeat", "cpu_percent": 1,
+                                  "memory_percent": 2, "disk_percent": 3}))
+              assert json.loads(ws.recv())["type"] == "heartbeat_ack"
+              assert json.loads(ws.recv())["request_id"] == screenshot["request_id"]
+              image = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/JXcAAAAASUVORK5CYII=")
+              upload = base + "/screenshots/" + screenshot["request_id"] + "/upload"
+              with urlopen(Request(upload, method="POST", data=image,
+                                   headers={"Authorization": "Bearer " + device["device_token"],
+                                            "Content-Type": "image/png"})) as response:
+                  assert json.load(response)["status"] == "COMPLETED"
+              with urlopen(Request("http://frontend/api/screenshots/" + screenshot["request_id"] + "/image",
+                                   headers={"Authorization": bearer})) as response:
+                  assert response.read() == image
+              with urlopen(Request(base + "/notes", method="POST",
+                                   headers={"Authorization": bearer, "Content-Type": "application/json"},
+                                   data=b'{"content":"CI reminder"}')) as response:
+                  note = json.load(response)
+              ws.send(json.dumps({"type": "heartbeat", "cpu_percent": 1,
+                                  "memory_percent": 2, "disk_percent": 3}))
+              assert json.loads(ws.recv())["type"] == "heartbeat_ack"
+              assert json.loads(ws.recv())["note_id"] == note["note_id"]
           PY
       - name: Show service status on failure
         if: failure()

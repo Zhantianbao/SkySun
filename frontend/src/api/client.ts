@@ -38,3 +38,16 @@ export async function api<T>(
   }
   return response.json() as Promise<T>;
 }
+
+export async function apiBlob(path: string, token: string): Promise<Blob> {
+  const response = await fetch(`${base}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    if (response.status === 401)
+      window.dispatchEvent(new Event("skysun:unauthorized"));
+    throw new ApiError(response.status, `请求失败 (${response.status})`);
+  }
+  return response.blob();
+}

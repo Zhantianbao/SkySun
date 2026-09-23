@@ -10,6 +10,7 @@ const MemoryPage = lazy(() => import("./pages/Memory").then((module) => ({ defau
 const Knowledge = lazy(() => import("./pages/Knowledge").then((module) => ({ default: module.Knowledge })));
 const Admin = lazy(() => import("./pages/Admin").then((module) => ({ default: module.Admin })));
 const Devices = lazy(() => import("./pages/Devices").then((module) => ({ default: module.Devices })));
+const Screenshots = lazy(() => import("./pages/Screenshots").then((module) => ({ default: module.Screenshots })));
 
 function Protected({ admin = false }: { admin?: boolean }) {
   const { user, loading } = useAuth();
@@ -32,6 +33,7 @@ export function App() {
             <Route path="/memory" element={<MemoryPage />} />
             <Route path="/knowledge" element={<Knowledge />} />
             <Route path="/devices" element={<Devices />} />
+            <Route path="/screenshots" element={<Screenshots />} />
             <Route path="/admin" element={<Protected admin />} />
           </Route>
           <Route path="*" element={<Navigate to="/chat" replace />} />

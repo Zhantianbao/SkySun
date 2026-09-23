@@ -79,4 +79,18 @@ export type Device = {
   cpu_percent: number | null;
   memory_percent: number | null;
   disk_percent: number | null;
+  project_name: string | null;
+  git_branch: string | null;
+  git_modified_count: number | null;
+  last_activity_at: string | null;
+  vscode_running: boolean | null;
+  codex_active: boolean | null;
+  vscode_workspace: string | null;
+};
+export type Screenshot = {
+  request_id: string;
+  device_id: string;
+  status: "PENDING" | "COMPLETED" | "FAILED" | "EXPIRED";
+  requested_at: string;
+  uploaded_at: string | null;
 };

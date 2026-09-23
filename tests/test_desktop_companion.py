@@ -3,6 +3,9 @@
 import json
 import os
 from pathlib import Path
+import subprocess
+from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 import pytest
 
@@ -71,3 +74,72 @@ def test_metrics_and_reconnecting_heartbeat(tmp_path, monkeypatch):
     assert len(attempts) == 2
     assert attempts[-1][0] == "wss://sky.example/api/ws/devices/id"
     assert attempts[-1][1]["additional_headers"]["Authorization"] == "Bearer secret"
+
+
+def test_user_selected_workspace_and_confirmed_codex_status(tmp_path, monkeypatch):
+    config_path = tmp_path / "companion.json"
+    config_path.write_text('{"server":"https://sky.example","device_id":"id","device_token":"secret"}')
+    workspace = tmp_path / "project"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(workspace)], check=True)
+    (workspace / "draft.txt").write_text("work")
+    monkeypatch.setattr(companion.psutil, "process_iter", lambda _: [])
+    companion.set_context(config_path, str(workspace), codex_active=True)
+    config = json.loads(config_path.read_text())
+    state = companion.collect_development(config)
+    assert state["project_name"] == "project"
+    assert state["git_branch"] == "main"
+    assert state["git_modified_count"] == 1
+    assert state["last_activity_at"] is not None
+    assert state["codex_active"] is True
+
+    marker = tmp_path / "vscode-status.json"
+    marker.write_text(json.dumps({"workspace_path": str(workspace),
+                                  "updated_at": datetime.now(timezone.utc).isoformat(),
+                                  "activity_at": datetime.now(timezone.utc).isoformat()}))
+    assert companion.collect_development(config, marker)["vscode_workspace"] == "project"
+    marker.write_text(json.dumps({"workspace_path": str(tmp_path / "other"),
+                                  "updated_at": datetime.now(timezone.utc).isoformat()}))
+    assert companion.collect_development(config, marker)["vscode_workspace"] is None
+    marker.write_text(json.dumps({"workspace_path": str(workspace),
+                                  "updated_at": (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()}))
+    assert companion.collect_development(config, marker)["vscode_workspace"] is None
+
+
+def test_only_allowlisted_actions_are_handled_and_notes_are_idempotent(tmp_path, monkeypatch):
+    config = {"server": "https://sky.example", "device_id": "device",
+              "device_token": "secret"}
+    calls = []
+    monkeypatch.setattr(companion, "_device_request", lambda *args: calls.append(args))
+    inbox = tmp_path / "inbox"
+    note_id = str(uuid4())
+    action = {"type": "note", "note_id": note_id, "content": "Review this"}
+    companion.handle_action(config, action, inbox)
+    companion.handle_action(config, action, inbox)
+    assert json.loads((inbox / (note_id + ".json")).read_text())["content"] == "Review this"
+    assert len(list(inbox.iterdir())) == 1
+    assert len(calls) == 2  # An acknowledgement can be retried safely.
+    companion.handle_action(config, {"type": "shell", "command": "rm -rf /"}, inbox)
+    assert len(calls) == 2
+
+
+def test_screenshot_is_captured_only_for_explicit_request(tmp_path, monkeypatch):
+    import mss
+    import mss.tools
+    class Screen:
+        monitors = [object()]
+        def __enter__(self):
+            return self
+        def __exit__(self, *_):
+            pass
+        def grab(self, _):
+            return type("Frame", (), {"rgb": b"rgb", "size": (1, 1)})()
+    monkeypatch.setattr(mss, "mss", lambda: Screen())
+    monkeypatch.setattr(mss.tools, "to_png", lambda rgb, size: b"png")
+    calls = []
+    monkeypatch.setattr(companion, "_device_request", lambda *args: calls.append(args))
+    config = {"server": "https://sky.example", "device_id": "device",
+              "device_token": "secret"}
+    companion.handle_action(config, {"type": "screenshot_request", "request_id": str(uuid4())})
+    assert len(calls) == 1
+    assert calls[0][2] == b"png"
+    assert calls[0][3] == "image/png"

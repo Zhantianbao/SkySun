@@ -5,6 +5,7 @@ import {
   LogOut,
   MessageCircle,
   Monitor,
+  Camera,
   Shield,
   Workflow,
 } from "lucide-react";
@@ -18,6 +19,7 @@ const navigation = [
   { to: "/memory", label: "记忆", icon: Brain },
   { to: "/knowledge", label: "知识", icon: BookOpenText },
   { to: "/devices", label: "设备", icon: Monitor },
+  { to: "/screenshots", label: "截图", icon: Camera },
 ];
 
 export function Layout() {

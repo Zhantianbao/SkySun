@@ -1372,3 +1372,19 @@ tr:last-child td {
   .mobile-brand { flex: 0 0 38px; }
   .mobile-nav-item span { font-size: 9px; }
 }
+
+.development-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 15px; }
+.development-status > div { display: grid; gap: 3px; padding: 9px 11px; background: #f8faf7; border-radius: 9px; min-width: 0; }
+.development-status span { font-size: 11px; color: #8b988c; }
+.development-status strong { font-size: 12px; overflow-wrap: anywhere; }
+.device-actions { display: flex; gap: 8px; margin-top: 18px; }
+.device-actions button:disabled, .device-note-form button:disabled { opacity: .5; cursor: not-allowed; }
+.device-note-form { display: flex; gap: 8px; margin-top: 12px; }
+.device-note-form input { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid #e3e9df; border-radius: 9px; }
+.device-notice { padding: 12px; border-radius: 10px; color: #326d3c; background: #eaf6e9; }
+.screenshot-card { display: flex; align-items: center; gap: 13px; padding: 15px; border: 1px solid #e7ede6; border-radius: 13px; background: white; }
+.screenshot-card > div { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.screenshot-card small { color: #829087; }
+.screenshot-preview { margin-bottom: 22px; padding: 8px; background: #fff; border: 1px solid #e7ede6; border-radius: 12px; }
+.screenshot-preview img { display: block; width: 100%; height: auto; max-height: 70vh; object-fit: contain; }
+@media (max-width: 700px) { .device-actions { flex-wrap: wrap; } .device-note-form { flex-wrap: wrap; } }

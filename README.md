@@ -1,4 +1,4 @@
-# SkySun v1.5.0
+# SkySun v1.6.0
 
 SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
 
@@ -47,7 +47,8 @@ For subsequent starts, use `docker compose up`; use `docker compose down` to sto
 - [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP.
 - [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment.
 - [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix.
-- [v1.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.5.0) — Desktop Companion Foundation (this version).
+- [v1.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.5.0) — Desktop Companion Foundation.
+- [v1.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.6.0) — Remote Development Assistant (this version).
 
 ## Desktop companion
 
@@ -63,6 +64,21 @@ python -m venv .venv
 ```
 
 On Windows, use `.venv\\Scripts\\python.exe` and `.venv\\Scripts\\pip.exe`. Registration prompts for your SkySun user access token without showing it. The server returns a separate device token, stored with owner-only file permissions in `~/.config/skysun/companion.json`. Keep that file private. The process reconnects after network interruptions and reports status while it remains running. Open `/devices` in the web app to see your own devices; deleting a device through the API revokes its device token. Local HTTP is accepted only for `localhost` development.
+
+## Remote development assistance
+
+On your computer, explicitly choose the one workspace the companion may inspect:
+
+```bash
+.venv/bin/python -m skysun_companion context --workspace /absolute/path/to/project
+# When a Codex-assisted task is active, confirm it for two hours:
+.venv/bin/python -m skysun_companion context --workspace /absolute/path/to/project --codex-active
+.venv/bin/python -m skysun_companion run
+```
+
+The companion runs fixed `git branch` and `git status` queries for that selected directory; it reads no source contents and accepts no remote shell commands. The dashboard reports project name, branch, changed-file count, recent local activity, VS Code process presence, and user-confirmed Codex status. The optional extension in `vscode-extension/` writes the active VS Code workspace to a local status file. The companion reports that workspace only when its path matches the user's selected directory and the status is fresh. Build its VSIX with `npx @vscode/vsce package` from that directory and install it through VS Code's **Install from VSIX** command. Without the extension, the opened workspace remains unconfirmed.
+
+From `/devices`, an authenticated owner may request a single screenshot or send a short reminder. A screenshot is captured only for that request, uploaded as a PNG with the device credential, and shown on `/screenshots` only to the owner. Pending screenshot requests expire after two minutes; images are deleted after 24 hours. Reminders are saved as individual files under `~/.config/skysun/inbox/` on the computer and acknowledged to the server. The companion has no continuous recording or arbitrary command endpoint. Requests, uploads, failures, and note deliveries are logged in `device_events`. For production HTTPS deployments, the outer TLS reverse proxy must forward WebSocket Upgrade requests on `/api/ws/`; the Docker Nginx service already forwards them to FastAPI. Rebuild and start with `docker compose up -d --build`.
 
 ## Local setup
 

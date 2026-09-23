@@ -261,4 +261,50 @@ describe("web application", () => {
     expect(screen.getByText("在线")).toBeInTheDocument();
     expect(screen.getByText("35%")).toBeInTheDocument();
   });
+
+  it("requests a screenshot and queues a desktop reminder", async () => {
+    sessionStorage.setItem("skysun_token", "test-token");
+    sessionStorage.setItem("skysun_user", JSON.stringify(identity));
+    window.history.replaceState({}, "", "/devices");
+    const deviceId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => ({
+      ok: true,
+      json: async () => String(url).endsWith("/me") ? identity
+        : options?.method === "POST" ? { status: "PENDING" }
+          : [{ device_id: deviceId, name: "Laptop", hostname: "host",
+              operating_system: "Linux", online: true, last_heartbeat_at: null,
+              cpu_percent: 1, memory_percent: 2, disk_percent: 3,
+              project_name: "SkySun", git_branch: "main", git_modified_count: 2,
+              last_activity_at: null, vscode_running: true, codex_active: false }],
+    } as Response));
+    render(<App />);
+    await screen.findByText("Laptop");
+    expect(screen.getByText("SkySun")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "请求截图" }));
+    await screen.findByText(/截图请求已发送/);
+    fireEvent.change(screen.getByLabelText("给 Laptop 的提醒"), { target: { value: "Review this" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送" }));
+    await screen.findByText(/提醒已加入/);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/devices/${deviceId}/screenshots`,
+      expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith(`/api/devices/${deviceId}/notes`,
+      expect.objectContaining({ body: JSON.stringify({ content: "Review this" }) }));
+  });
+
+  it("shows owner screenshot request status", async () => {
+    sessionStorage.setItem("skysun_token", "test-token");
+    sessionStorage.setItem("skysun_user", JSON.stringify(identity));
+    window.history.replaceState({}, "", "/screenshots");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => ({
+      ok: true,
+      json: async () => String(url).endsWith("/me") ? identity : [{
+        request_id: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        device_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        status: "PENDING", requested_at: "2026-09-23T10:00:00Z", uploaded_at: null,
+      }],
+    } as Response));
+    render(<App />);
+    expect(await screen.findByText("等待电脑响应")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看" })).not.toBeInTheDocument();
+  });
 });
