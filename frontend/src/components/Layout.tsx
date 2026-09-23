@@ -4,6 +4,7 @@ import {
   Brain,
   LogOut,
   MessageCircle,
+  Monitor,
   Shield,
   Workflow,
 } from "lucide-react";
@@ -16,6 +17,7 @@ const navigation = [
   { to: "/tasks", label: "任务", icon: Workflow },
   { to: "/memory", label: "记忆", icon: Brain },
   { to: "/knowledge", label: "知识", icon: BookOpenText },
+  { to: "/devices", label: "设备", icon: Monitor },
 ];
 
 export function Layout() {

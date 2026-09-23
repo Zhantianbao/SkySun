@@ -24,6 +24,32 @@ jobs:
           curl --fail --show-error --silent http://127.0.0.1:8080/chat --output /tmp/skysun-chat.html
           cmp /tmp/skysun-index.html /tmp/skysun-chat.html
           curl --fail --show-error http://127.0.0.1:8080/api/health
+      - name: Check device WebSocket through Nginx
+        run: |
+          docker compose exec -T backend python - <<'PY'
+          import json
+          import os
+          from urllib.request import Request, urlopen
+          from websockets.sync.client import connect
+
+          bearer = "Bearer " + os.environ["SKYSUN_ADMIN_TOKEN"]
+          request = Request("http://frontend/api/devices", method="POST",
+                            headers={"Authorization": bearer, "Content-Type": "application/json"},
+                            data=json.dumps({"name": "CI computer", "hostname": "runner",
+                                             "operating_system": "Linux"}).encode())
+          with urlopen(request) as response:
+              device = json.load(response)
+          with connect("ws://frontend/api/ws/devices/" + device["device_id"],
+                       additional_headers={"Authorization": "Bearer " + device["device_token"]}) as ws:
+              assert json.loads(ws.recv())["type"] == "connected"
+              ws.send(json.dumps({"type": "heartbeat", "cpu_percent": 1,
+                                  "memory_percent": 2, "disk_percent": 3}))
+              assert json.loads(ws.recv())["type"] == "heartbeat_ack"
+              with urlopen(Request("http://frontend/api/devices",
+                                   headers={"Authorization": bearer})) as response:
+                  devices = json.load(response)
+              assert devices[0]["online"] and devices[0]["cpu_percent"] == 1
+          PY
       - name: Show service status on failure
         if: failure()
         run: docker compose ps && docker compose logs --no-color --tail=150

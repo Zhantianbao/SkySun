@@ -1350,3 +1350,25 @@ tr:last-child td {
     width: 100%;
   }
 }
+
+/* Desktop companion dashboard */
+.device-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); }
+.device-card { background: #fff; border: 1px solid #e7ede6; border-radius: 17px; padding: 22px; }
+.device-heading { display: flex; align-items: center; gap: 12px; }
+.device-heading > div { flex: 1; min-width: 0; }
+.device-heading h2 { font-size: 17px; margin: 0 0 4px; }
+.device-heading small { color: #839184; overflow-wrap: anywhere; }
+.device-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; color: #447b50; background: #ecf4ea; }
+.device-presence { font-size: 12px; color: #8a958a; background: #f2f3f1; border-radius: 99px; padding: 5px 9px; white-space: nowrap; }
+.device-presence.online { color: #327548; background: #e8f5e8; }
+.device-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 22px 0; }
+.device-metrics > div { padding: 12px; border-radius: 10px; background: #f8faf7; display: grid; gap: 5px; }
+.device-metrics span { font-size: 11px; color: #8b988c; }
+.device-metrics strong { font-size: 18px; }
+.device-updated { margin: 0; color: #8b988c; font-size: 12px; }
+@media (max-width: 700px) {
+  .mobile-nav { justify-content: space-between; }
+  .mobile-nav-item { min-width: 0; flex: 1; }
+  .mobile-brand { flex: 0 0 38px; }
+  .mobile-nav-item span { font-size: 9px; }
+}

@@ -242,4 +242,23 @@ describe("web application", () => {
     expect(uploadCall?.[1]?.body).toBeInstanceOf(FormData);
     expect(uploadCall?.[1]?.headers).not.toHaveProperty("Content-Type");
   });
+
+  it("shows the current user's desktop companion status", async () => {
+    sessionStorage.setItem("skysun_token", "test-token");
+    sessionStorage.setItem("skysun_user", JSON.stringify(identity));
+    window.history.replaceState({}, "", "/devices");
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => ({
+      ok: true,
+      json: async () => String(url).endsWith("/me") ? identity : [{
+        device_id: "dddddddd-dddd-dddd-dddd-dddddddddddd",
+        name: "My Computer", hostname: "laptop", operating_system: "Linux",
+        online: true, last_heartbeat_at: "2026-09-23T10:00:00Z",
+        cpu_percent: 35, memory_percent: 60, disk_percent: 42,
+      }],
+    } as Response));
+    render(<App />);
+    await screen.findByText("My Computer");
+    expect(screen.getByText("在线")).toBeInTheDocument();
+    expect(screen.getByText("35%")).toBeInTheDocument();
+  });
 });

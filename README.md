@@ -1,10 +1,18 @@
-# SkySun v1.4.1
+# SkySun v1.5.0
 
 SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
 
 ## Architecture
 
 The React and TypeScript frontend calls FastAPI through same-origin `/api` routes. FastAPI authenticates bearer tokens and passes the user context into the existing Agent, memory, task, and knowledge stores. PostgreSQL holds conversations, memories, documents, tasks, and observability records; pgvector searches embedded document passages. A local multilingual E5 model creates embeddings. Existing unprefixed API routes remain available for earlier clients.
+
+```mermaid
+flowchart LR
+  Browser[Mobile browser] -->|HTTPS| Web[SkySun Nginx and FastAPI]
+  Companion[Foreground desktop companion] -->|WSS heartbeat| Web
+  Web --> Database[(PostgreSQL and pgvector)]
+  Companion --> Computer[Own computer status]
+```
 
 ## Docker local deployment
 
@@ -38,7 +46,23 @@ For subsequent starts, use `docker compose up`; use `docker compose down` to sto
 - [v1.2.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.2.0) — Agent Observability & Evaluation System.
 - [v1.3.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.3.0) — Web Application MVP.
 - [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment.
-- [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix (this version).
+- [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix.
+- [v1.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.5.0) — Desktop Companion Foundation (this version).
+
+## Desktop companion
+
+The desktop companion is a foreground Python program on your own computer. It reports hostname, operating system, CPU, memory, disk usage, and heartbeat time to your SkySun account. It has no remote command execution. The VPS uses the existing Docker services; Nginx forwards `/api/ws/` WebSocket traffic to FastAPI. For remote access, serve SkySun over HTTPS so the companion connects over WSS.
+
+On the computer you want to monitor, install Python 3.11+ and run:
+
+```bash
+python -m venv .venv
+.venv/bin/pip install ./desktop-agent
+.venv/bin/python -m skysun_companion register --server https://your-skysun-host --name "My Computer"
+.venv/bin/python -m skysun_companion run
+```
+
+On Windows, use `.venv\\Scripts\\python.exe` and `.venv\\Scripts\\pip.exe`. Registration prompts for your SkySun user access token without showing it. The server returns a separate device token, stored with owner-only file permissions in `~/.config/skysun/companion.json`. Keep that file private. The process reconnects after network interruptions and reports status while it remains running. Open `/devices` in the web app to see your own devices; deleting a device through the API revokes its device token. Local HTTP is accepted only for `localhost` development.
 
 ## Local setup
 

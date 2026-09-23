@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=70"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "skysun-companion"
+version = "1.5.0"
+requires-python = ">=3.11"
+dependencies = ["psutil>=5.9,<8", "websockets>=14,<17"]
+
+[tool.setuptools.packages.find]
+where = ["."]

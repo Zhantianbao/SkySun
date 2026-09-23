@@ -13,6 +13,7 @@ from skysun.config import load_settings
 from skysun.conversation import ConversationService, ConversationStore
 from skysun.deepseek import create_deepseek
 from skysun.deepseek_evaluation import DeepSeekClaimReviewer
+from skysun.devices import PostgresDeviceStore
 from skysun.embeddings import EmbeddingProvider, SentenceTransformerEmbeddingProvider
 from skysun.knowledge import KnowledgeStore
 from skysun.knowledge_ingestion import KnowledgeIngestionService
@@ -74,6 +75,8 @@ def create_app(
     task_store.initialize_schema()
     observability = PostgresObservabilityStore(database_url)
     observability.initialize_schema()
+    devices = PostgresDeviceStore(database_url)
+    devices.initialize_schema()
     model = create_deepseek(settings)
     direct_agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
     agent = WorkflowAgent(
@@ -93,7 +96,8 @@ def create_app(
     app = build_api(ConversationService(agent, store, curation), lifespan=lifespan,
                     users=users, tasks=task_store, observability=observability,
                     memory=memory_store, knowledge=knowledge_store,
-                    ingestion=KnowledgeIngestionService(knowledge_store, embeddings))
+                    ingestion=KnowledgeIngestionService(knowledge_store, embeddings),
+                    devices=devices)
     web_dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if web_dist.is_dir():
         app.mount("/", WebStaticFiles(directory=web_dist, html=True), name="web")

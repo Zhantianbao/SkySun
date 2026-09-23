@@ -69,3 +69,14 @@ export type Evaluation = {
   created_at: string | null;
 };
 export type Metrics = Record<string, unknown>;
+export type Device = {
+  device_id: string;
+  name: string;
+  hostname: string;
+  operating_system: string;
+  online: boolean;
+  last_heartbeat_at: string | null;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  disk_percent: number | null;
+};

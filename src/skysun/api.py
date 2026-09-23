@@ -9,6 +9,8 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Reques
 from pydantic import BaseModel, ConfigDict, Field
 
 from skysun.conversation import ConversationNotFound, ConversationService
+from skysun.device_api import device_router
+from skysun.devices import PostgresDeviceStore
 from skysun.knowledge import KnowledgeStore
 from skysun.knowledge_ingestion import KnowledgeIngestionService
 from skysun.memory import MemoryStore
@@ -57,10 +59,11 @@ def build_api(
     memory: MemoryStore | None = None,
     knowledge: KnowledgeStore | None = None,
     ingestion: KnowledgeIngestionService | None = None,
+    devices: PostgresDeviceStore | None = None,
 ) -> FastAPI:
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
-    app = FastAPI(title="SkySun", version="1.4.1", lifespan=lifespan)
+    app = FastAPI(title="SkySun", version="1.5.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def api_prefix(request: Request, call_next):
@@ -330,4 +333,6 @@ def build_api(
         return {"feedback_id": str(saved.feedback_id), "task_id": str(saved.task_id),
                 "rating": saved.rating.value, "created_at": saved.created_at.isoformat()}
 
+    if devices is not None:
+        app.include_router(device_router(devices, identify))
     return app
