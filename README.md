@@ -1,10 +1,10 @@
-# SkySun v1.6.0
+# SkySun v1.7.0
 
 SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
 
 ## Architecture
 
-The React and TypeScript frontend calls FastAPI through same-origin `/api` routes. FastAPI authenticates bearer tokens and passes the user context into the existing Agent, memory, task, and knowledge stores. PostgreSQL holds conversations, memories, documents, tasks, and observability records; pgvector searches embedded document passages. A local multilingual E5 model creates embeddings. Existing unprefixed API routes remain available for earlier clients.
+The React and TypeScript frontend calls FastAPI through same-origin `/api` routes. FastAPI authenticates bearer tokens and passes the user context into the existing Agent, memory, task, and knowledge stores. PostgreSQL holds conversations, memories, documents, tasks, and observability records; pgvector searches document passages embedded by Alibaba Cloud Model Studio's `qwen3.7-text-embedding`. DeepSeek remains the chat model. Existing unprefixed API routes remain available for earlier clients.
 
 ```mermaid
 flowchart LR
@@ -16,15 +16,15 @@ flowchart LR
 
 ## Docker local deployment
 
-Install Docker Engine or Docker Desktop with the Compose plugin. Copy `.env.example` to `.env`, then set a real `DEEPSEEK_API_KEY`, a random `SKYSUN_ADMIN_TOKEN` of at least 32 characters, and a random hexadecimal `POSTGRES_PASSWORD`. Keep `.env` local and use hexadecimal characters for the database password so it can be inserted safely into the PostgreSQL URL.
+Install Docker Engine or Docker Desktop with the Compose plugin. Copy `.env.example` to `.env`, then set real `DEEPSEEK_API_KEY` and `DASHSCOPE_API_KEY` values, a random `SKYSUN_ADMIN_TOKEN` of at least 32 characters, and a random hexadecimal `POSTGRES_PASSWORD`. Keep `.env` local and use hexadecimal characters for the database password so it can be inserted safely into the PostgreSQL URL. The example's `DASHSCOPE_BASE_URL` is the Beijing shared endpoint and works with an API key from that region, including the default workspace; it does not require a workspace ID. For another region, use that region's endpoint. A workspace-specific endpoint is also supported.
 
 ```bash
 cp .env.example .env
-# Edit .env and fill the three required values.
+# Edit .env and fill the required values.
 docker compose up --build
 ```
 
-Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. The backend image downloads the embedding model while building, so the first build requires network access and can take several minutes. The admin token provisions `legacy_admin`; use `POST /api/admin/users` with its bearer token to create ordinary users. The frontend login accepts the username and issued token.
+Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. Embedding requests call Model Studio at document ingestion and knowledge search time. The admin token provisions `legacy_admin`; use `POST /api/admin/users` with its bearer token to create ordinary users. The frontend login accepts the username and issued token.
 
 The production Nginx container serves the web app at `/` and returns the same app entry point for direct links such as `/chat`. API requests under `/api/` continue to reach FastAPI.
 
@@ -48,7 +48,8 @@ For subsequent starts, use `docker compose up`; use `docker compose down` to sto
 - [v1.4.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.0) — Production Experience & Deployment.
 - [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix.
 - [v1.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.5.0) — Desktop Companion Foundation.
-- [v1.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.6.0) — Remote Development Assistant (this version).
+- [v1.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.6.0) — Remote Development Assistant.
+- [v1.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.7.0) — Hosted knowledge embeddings (this version).
 
 ## Desktop companion
 
@@ -82,14 +83,14 @@ From `/devices`, an authenticated owner may request a single screenshot or send 
 
 ## Local setup
 
-Use Python 3.11 and the project virtual environment. Install a CPU PyTorch wheel first, then install the project:
+Use Python 3.11 and the project virtual environment. Install the project:
 
 ```bash
-python -m pip install 'torch==2.7.1+cpu' --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -e '.[test]'
+python -m pip install -e ./desktop-agent  # Needed for the desktop companion tests.
 ```
 
-PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL`, `DEEPSEEK_API_KEY`, and a randomly generated `SKYSUN_ADMIN_TOKEN` of at least 32 characters locally using `.env.example` as a template; never commit `.env`. The admin token provisions the `legacy_admin` account at startup. Existing single-user records belong only to this account after migration.
+PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL`, and a randomly generated `SKYSUN_ADMIN_TOKEN` of at least 32 characters locally using `.env.example` as a template; never commit `.env`. The admin token provisions the `legacy_admin` account at startup. Existing single-user records belong only to this account after migration.
 
 Start the API:
 
@@ -108,9 +109,11 @@ python -m skysun.ingest --delete /absolute/path/to/notes.md
 
 Re-ingesting an unchanged file is a no-op. Re-ingesting a changed file atomically replaces its chunks. Deleting a document removes its chunks; it does not affect personal memory or conversations.
 
-The first embedding use downloads `intfloat/multilingual-e5-small` into the normal Hugging Face cache outside the repository. SkySun loads it once per application process on CPU. E5 input uses `passage:` for chunks and `query:` for searches; vectors are normalized to 384 dimensions.
+SkySun sends document chunks and search queries to Model Studio's synchronous OpenAI-compatible `qwen3.7-text-embedding` endpoint. It requests 1,024-dimensional dense vectors and limits each request to 20 texts. This is the synchronous API, not the lower-priced asynchronous Batch File API. The model, dimension, and endpoint URL must stay consistent for both ingestion and retrieval.
 
-Chunking targets 1,000 characters with 150 characters of overlap and prefers newline boundaries. Search performs exact pgvector cosine-distance ordering, returns at most four chunks by default, and filters results above an initial 0.35 distance. This threshold is only a retrieval heuristic: semantic similarity does not prove an answer. There is no ANN index or reranker.
+New databases create 1,024-dimensional vector storage. An empty table left by the previous local model is adjusted automatically; a populated table with old vectors cannot be converted automatically.
+
+Chunking targets 1,000 characters with 150 characters of overlap and prefers newline boundaries. Search performs exact pgvector cosine-distance ordering, returns at most four chunks by default, and filters results above an initial 0.35 distance. Recheck this threshold against representative questions after switching embedding models. This threshold is only a retrieval heuristic: semantic similarity does not prove an answer. There is no ANN index or reranker.
 
 ## Grounded Knowledge Reasoning
 

@@ -1,7 +1,7 @@
 {
   "name": "skysun-web",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
@@ -28,6 +28,6 @@
     "jsdom": "^26.0.0",
     "typescript": "^5.0.0",
     "vite": "^6.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.11"
   }
 }

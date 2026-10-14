@@ -10,8 +10,8 @@ import pytest
 from skysun.knowledge import KnowledgeChunkInput
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 
-_A = (1.0,) + (0.0,) * 383
-_B = (0.0, 1.0) + (0.0,) * 382
+_A = (1.0,) + (0.0,) * 1023
+_B = (0.0, 1.0) + (0.0,) * 1022
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ def test_postgres_idempotent_update_vector_order_sources_and_cascade(
         assert all_results[0].chunk_index == 0
         assert all_results[0].cosine_distance < all_results[1].cosine_distance
         assert [item.source_name for item in store.search(_A)] == ["helios.md"]
-        assert store.search(tuple([0.0, 0.0, 1.0] + [0.0] * 381)) == ()
+        assert store.search(tuple([0.0, 0.0, 1.0] + [0.0] * 1021)) == ()
 
         updated = store.save_document(
             path, "helios.md", "hash-three",
@@ -102,7 +102,7 @@ def test_postgres_rejects_invalid_vectors_without_writes(
     knowledge_store: PostgresKnowledgeStore,
 ) -> None:
     path = f"/tmp/skysun_test_bad_{uuid4().hex}.md"
-    with pytest.raises(ValueError, match="384"):
+    with pytest.raises(ValueError, match="1024"):
         knowledge_store.save_document(
             path, "bad.md", "bad-hash", (KnowledgeChunkInput("bad", (1.0, 0.0)),)
         )

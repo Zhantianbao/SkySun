@@ -17,7 +17,7 @@ from skysun.deepseek import create_deepseek
 from skysun.deepseek_evaluation import DeepSeekClaimReviewer
 from skysun.devices import PostgresDeviceStore
 from skysun.development import PostgresDevelopmentStore
-from skysun.embeddings import EmbeddingProvider, SentenceTransformerEmbeddingProvider
+from skysun.embeddings import EmbeddingProvider, create_embeddings
 from skysun.knowledge import KnowledgeStore
 from skysun.knowledge_ingestion import KnowledgeIngestionService
 from skysun.langchain_agent import LangChainAgent
@@ -73,7 +73,7 @@ def create_app(
         postgres_knowledge.initialize_schema()
         knowledge_store = postgres_knowledge
     if embeddings is None:
-        embeddings = SentenceTransformerEmbeddingProvider()
+        embeddings = create_embeddings(settings)
     task_store = PostgresTaskStore(database_url)
     task_store.initialize_schema()
     observability = PostgresObservabilityStore(database_url)

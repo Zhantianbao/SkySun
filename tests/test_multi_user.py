@@ -169,7 +169,7 @@ def test_curator_deduplicates_within_each_user(platform):
 def test_private_knowledge_isolation_and_global_visibility(platform):
     _, _, _, _, knowledge, accounts = platform
     _, (alice, _), (bob, _) = accounts
-    vector = (1.0,) + (0.0,) * 383
+    vector = (1.0,) + (0.0,) * 1023
     path = "/test/" + uuid4().hex + "/private.md"
     with _scope(alice):
         knowledge.save_document(path, "private.md", "hash-a",
@@ -290,7 +290,7 @@ def test_web_read_endpoints_keep_user_data_isolated(platform):
         memory.remember("web_preference", "Prefers green", "preference")
         task = tasks.create("Private web task", UUID(conversation_id), ())
         knowledge.save_document(path, "alice.md", "hash-web",
-                                (KnowledgeChunkInput("Alice document", (1.0,) + (0.0,) * 383),))
+                                (KnowledgeChunkInput("Alice document", (1.0,) + (0.0,) * 1023),))
 
     class Agent:
         def reply(self, message, history=(), conversation_id=None):
@@ -326,10 +326,10 @@ def test_web_upload_and_task_activity_respect_ownership(platform):
     observability.initialize_schema()
 
     class Embeddings:
-        dimension = 384
+        dimension = 1024
 
         def embed_passages(self, texts):
-            return ((1.0,) + (0.0,) * 383,) * len(texts)
+            return ((1.0,) + (0.0,) * 1023,) * len(texts)
 
     class Agent:
         def reply(self, message, history=(), conversation_id=None):

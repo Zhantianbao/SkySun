@@ -108,10 +108,10 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
             return ()
 
     class FakeEmbeddings:
-        dimension = 384
+        dimension = 1024
 
         def embed_query(self, text):
-            return (1.0,) + (0.0,) * 383
+            return (1.0,) + (0.0,) * 1023
 
     client = TestClient(main.create_app(
         InMemoryConversationStore(), curator=NoOpCurator(),

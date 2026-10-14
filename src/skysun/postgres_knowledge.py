@@ -80,7 +80,7 @@ class PostgresKnowledgeStore:
                         REFERENCES knowledge_documents(id) ON DELETE CASCADE,
                     chunk_index INTEGER NOT NULL,
                     content TEXT NOT NULL CHECK (content <> ''),
-                    embedding VECTOR(384) NOT NULL,
+                    embedding VECTOR(1024) NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                     UNIQUE (document_id, chunk_index)
                 )
@@ -102,6 +102,24 @@ class PostgresKnowledgeStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS knowledge_documents_owner_path_idx
                 ON knowledge_documents (owner_id, source_path) WHERE owner_id IS NOT NULL
             """)
+            dimension = conn.execute("""
+                SELECT format_type(atttypid, atttypmod)
+                FROM pg_attribute
+                WHERE attrelid = 'knowledge_chunks'::regclass AND attname = 'embedding'
+            """).fetchone()[0]
+            if dimension != f"vector({EMBEDDING_DIMENSION})":
+                count = conn.execute("SELECT count(*) FROM knowledge_chunks").fetchone()[0]
+                if count:
+                    raise RuntimeError(
+                        "Existing knowledge vectors use a different dimension; "
+                        "this database needs a separate data migration before startup"
+                    )
+                if dimension != "vector(384)":
+                    raise RuntimeError(f"Unsupported knowledge vector dimension: {dimension}")
+                conn.execute(
+                    f"ALTER TABLE knowledge_chunks ALTER COLUMN embedding "
+                    f"TYPE VECTOR({EMBEDDING_DIMENSION})"
+                )
 
     def get_by_path(self, source_path: str) -> KnowledgeDocument | None:
         with self._transaction() as conn:

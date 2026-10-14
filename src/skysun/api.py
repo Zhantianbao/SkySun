@@ -65,7 +65,7 @@ def build_api(
 ) -> FastAPI:
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
-    app = FastAPI(title="SkySun", version="1.6.0", lifespan=lifespan)
+    app = FastAPI(title="SkySun", version="1.7.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def api_prefix(request: Request, call_next):

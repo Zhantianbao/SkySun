@@ -19,11 +19,11 @@ from skysun.knowledge_ingestion import KnowledgeIngestionService, chunk_text
 from skysun.langchain_agent import LangChainAgent
 from skysun.knowledge_grounding import GroundingResult, GroundingStatus
 
-_VECTOR_A = (1.0,) + (0.0,) * 383
+_VECTOR_A = (1.0,) + (0.0,) * 1023
 
 
 class FakeEmbeddings:
-    dimension = 384
+    dimension = 1024
 
     def __init__(self) -> None:
         self.passages: list[tuple[str, ...]] = []
@@ -181,36 +181,34 @@ def test_agent_knowledge_tool_uses_query_embeddings_and_source_metadata() -> Non
 
 
 
-def test_local_e5_adapter_uses_cpu_prefixes_and_normalized_vectors(
+def test_qwen_adapter_uses_compatible_api_and_validates_vectors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import sys
-    from types import SimpleNamespace
+    from skysun import embeddings
 
     calls = []
 
-    class FakeSentenceTransformer:
-        def __init__(self, name, device):
-            assert name == "intfloat/multilingual-e5-small"
-            assert device == "cpu"
+    class FakeOpenAIEmbeddings:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
 
-        def get_embedding_dimension(self):
-            return 384
-
-        def encode(self, texts, normalize_embeddings, show_progress_bar):
-            calls.append((texts, normalize_embeddings, show_progress_bar))
+        def embed_documents(self, texts):
+            calls.append(texts)
             return [_VECTOR_A for _ in texts]
 
-    monkeypatch.setitem(
-        sys.modules, "sentence_transformers",
-        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
-    )
-    from skysun.embeddings import SentenceTransformerEmbeddingProvider
-
-    provider = SentenceTransformerEmbeddingProvider()
+    monkeypatch.setattr(embeddings, "OpenAIEmbeddings", FakeOpenAIEmbeddings)
+    provider = embeddings.QwenEmbeddingProvider("test-key", "https://example.com/compatible-mode/v1")
+    assert provider.embed_passages([]) == ()
     assert provider.embed_passages(["中文材料", "English material"]) == (_VECTOR_A, _VECTOR_A)
     assert provider.embed_query("What is the material?") == _VECTOR_A
-    assert calls == [
-        (["passage: 中文材料", "passage: English material"], True, False),
-        (["query: What is the material?"], True, False),
-    ]
+    assert calls[0]["model"] == "qwen3.7-text-embedding"
+    assert calls[0]["dimensions"] == 1024
+    assert calls[0]["chunk_size"] == 20
+    assert calls[0]["check_embedding_ctx_length"] is False
+    assert calls[0]["model_kwargs"] == {"encoding_format": "float"}
+    assert calls[1:] == [["中文材料", "English material"], ["What is the material?"]]
+    with pytest.raises(ValueError, match="empty"):
+        provider.embed_query("  ")
+    monkeypatch.setattr(provider._client, "embed_documents", lambda texts: [(1.0,)] * len(texts))
+    with pytest.raises(RuntimeError, match="invalid vector"):
+        provider.embed_query("question")

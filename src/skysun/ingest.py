@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from skysun.config import load_settings
-from skysun.embeddings import SentenceTransformerEmbeddingProvider
+from skysun.embeddings import create_embeddings
 from skysun.knowledge_ingestion import KnowledgeIngestionService
 from skysun.postgres_knowledge import PostgresKnowledgeStore
 
@@ -28,7 +28,7 @@ def main() -> int:
             deleted = store.delete_document(source_path)
             print(json.dumps({"source_path": source_path, "deleted": deleted}))
         else:
-            embeddings = SentenceTransformerEmbeddingProvider()
+            embeddings = create_embeddings(settings)
             result = KnowledgeIngestionService(store, embeddings).ingest(args.path)
             print(json.dumps({
                 "document_id": str(result.document_id),
