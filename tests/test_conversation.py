@@ -5,8 +5,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.api import build_api
-from skysun.conversation import (
+from skysun.core.api import build_api
+from skysun.memory.conversation import (
     ConversationMessage,
     ConversationService,
     InMemoryConversationStore,

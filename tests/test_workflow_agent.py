@@ -1,11 +1,11 @@
 """The workflow path is optional and preserves direct Agent behavior."""
 
-from skysun.langchain_agent import AgentExecution
-from skysun.knowledge import KnowledgeSearchResult
-from skysun.knowledge_grounding import GroundingStatus
-from skysun.planner import TaskPlan
-from skysun.verification import VerificationStatus
-from skysun.workflow_agent import WorkflowAgent
+from skysun.core.langchain_agent import AgentExecution
+from skysun.rag.knowledge import KnowledgeSearchResult
+from skysun.rag.knowledge_grounding import GroundingStatus
+from skysun.workflow.planner import TaskPlan
+from skysun.workflow.verification import VerificationStatus
+from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 class FakeDirectAgent:

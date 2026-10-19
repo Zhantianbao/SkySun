@@ -3,8 +3,8 @@ from uuid import UUID, uuid4
 from fastapi.testclient import TestClient
 import pytest
 
-from skysun.api import build_api
-from skysun.conversation import ConversationMessage, ConversationService, InMemoryConversationStore
+from skysun.core.api import build_api
+from skysun.memory.conversation import ConversationMessage, ConversationService, InMemoryConversationStore
 
 
 class StubAgent:

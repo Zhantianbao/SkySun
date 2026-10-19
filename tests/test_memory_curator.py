@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.api import build_api
-from skysun.conversation import ConversationService, InMemoryConversationStore
-from skysun.memory import MemoryChange, PersonalMemory
-from skysun.memory_curator import (
+from skysun.core.api import build_api
+from skysun.memory.conversation import ConversationService, InMemoryConversationStore
+from skysun.memory.memory import MemoryChange, PersonalMemory
+from skysun.memory.memory_curator import (
     MemoryCurationService, MemoryDecision, MemoryPlan, create_candidates,
 )
 
@@ -139,15 +139,15 @@ def test_curator_failure_keeps_http_reply_and_persisted_conversation() -> None:
 def test_bounded_decisions_and_missing_fields() -> None:
     with pytest.raises(ValueError):
         MemoryPlan(decisions=[MemoryDecision(action="ignore")] * 4)
-    from skysun.memory_curator import validate_plan
+    from skysun.memory.memory_curator import validate_plan
     with pytest.raises(ValueError):
         validate_plan(MemoryPlan(decisions=[MemoryDecision(action="delete")]))
 
 
 
 def test_langchain_curator_uses_typed_json_output_without_network() -> None:
-    from skysun.langchain_memory_curator import LangChainMemoryCurator
-    from skysun.memory_curator import CurationContext
+    from skysun.memory.langchain_memory_curator import LangChainMemoryCurator
+    from skysun.memory.memory_curator import CurationContext
 
     class FakeRunnable:
         def invoke(self, messages):

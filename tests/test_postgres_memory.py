@@ -7,11 +7,11 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 
-from skysun.conversation import ConversationMessage
-from skysun.memory import MemoryChange, normalize_key
-from skysun.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
-from skysun.postgres_conversation import PostgresConversationStore
-from skysun.postgres_memory import PostgresMemoryStore
+from skysun.memory.conversation import ConversationMessage
+from skysun.memory.memory import MemoryChange, normalize_key
+from skysun.memory.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
+from skysun.memory.postgres_conversation import PostgresConversationStore
+from skysun.memory.postgres_memory import PostgresMemoryStore
 
 
 @pytest.fixture
@@ -105,7 +105,7 @@ def test_memory_sql_error_omits_database_detail(monkeypatch: pytest.MonkeyPatch)
 
 def test_only_connection_failures_are_retryable() -> None:
     from types import SimpleNamespace
-    from skysun.postgres_memory import _is_transient
+    from skysun.memory.postgres_memory import _is_transient
 
     assert _is_transient(SimpleNamespace(sqlstate=None))
     assert _is_transient(SimpleNamespace(sqlstate="08006"))

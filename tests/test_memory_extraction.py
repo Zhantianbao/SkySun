@@ -5,8 +5,8 @@ from uuid import uuid4
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage
 
-from skysun.langchain_memory_curator import LangChainMemoryCurator
-from skysun.memory_curator import CurationContext, MemoryPlan
+from skysun.memory.langchain_memory_curator import LangChainMemoryCurator
+from skysun.memory.memory_curator import CurationContext, MemoryPlan
 
 
 def context() -> CurationContext:

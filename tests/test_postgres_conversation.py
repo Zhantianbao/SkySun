@@ -7,8 +7,8 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 
-from skysun.conversation import ConversationMessage, ConversationService
-from skysun.postgres_conversation import PostgresConversationStore
+from skysun.memory.conversation import ConversationMessage, ConversationService
+from skysun.memory.postgres_conversation import PostgresConversationStore
 
 
 @pytest.fixture

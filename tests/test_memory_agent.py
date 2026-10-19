@@ -9,9 +9,9 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr
 
-from skysun.conversation import ConversationService, InMemoryConversationStore
-from skysun.langchain_agent import LangChainAgent
-from skysun.memory import PersonalMemory, normalize_key
+from skysun.memory.conversation import ConversationService, InMemoryConversationStore
+from skysun.core.langchain_agent import LangChainAgent
+from skysun.memory.memory import PersonalMemory, normalize_key
 
 
 class FakeMemoryStore:

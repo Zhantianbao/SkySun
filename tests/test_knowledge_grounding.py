@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from skysun.knowledge import KnowledgeSearchResult
-from skysun.knowledge_grounding import (
+from skysun.rag.knowledge import KnowledgeSearchResult
+from skysun.rag.knowledge_grounding import (
     GroundedKnowledgeService, GroundingResult, GroundingStatus,
 )
 

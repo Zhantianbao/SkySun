@@ -7,15 +7,15 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.conversation import InMemoryConversationStore
-from skysun.langchain_agent import AgentExecution
-from skysun.knowledge import KnowledgeSearchResult
-from skysun.knowledge_grounding import GroundingStatus
-from skysun.planner import TaskPlan
-from skysun.postgres_task import PostgresTaskStore
-from skysun.task_runtime import TaskStatus
-from skysun.workflow import StepRecord, StepState
-from skysun.workflow_agent import WorkflowAgent
+from skysun.memory.conversation import InMemoryConversationStore
+from skysun.core.langchain_agent import AgentExecution
+from skysun.rag.knowledge import KnowledgeSearchResult
+from skysun.rag.knowledge_grounding import GroundingStatus
+from skysun.workflow.planner import TaskPlan
+from skysun.workflow.postgres_task import PostgresTaskStore
+from skysun.workflow.task_runtime import TaskStatus
+from skysun.workflow.workflow import StepRecord, StepState
+from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 @pytest.fixture
@@ -182,8 +182,8 @@ def test_interrupted_inflight_step_fails_without_replay(task_store, capability):
 
 
 def test_application_startup_recovers_interrupted_planning(task_store, monkeypatch):
-    from skysun import main
-    from skysun.config import Settings
+    from skysun.core import main
+    from skysun.core.config import Settings
 
     task = task_store.create("Interrupted before planning", None, ())
     task_store.transition(task.task_id, TaskStatus.PLANNING)

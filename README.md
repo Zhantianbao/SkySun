@@ -95,7 +95,7 @@ PostgreSQL 14 must have the pgvector server extension installed. Enable `vector`
 Start the API:
 
 ```bash
-python -m uvicorn skysun.main:create_app --factory
+python -m uvicorn skysun.core.main:create_app --factory
 ```
 
 ## Explicit document ingestion
@@ -103,8 +103,8 @@ python -m uvicorn skysun.main:create_app --factory
 Only UTF-8 `.md`, `.markdown`, and `.txt` files are supported. Files are never indexed automatically.
 
 ```bash
-python -m skysun.ingest /absolute/path/to/notes.md
-python -m skysun.ingest --delete /absolute/path/to/notes.md
+python -m skysun.rag.ingest /absolute/path/to/notes.md
+python -m skysun.rag.ingest --delete /absolute/path/to/notes.md
 ```
 
 Re-ingesting an unchanged file is a no-op. Re-ingesting a changed file atomically replaces its chunks. Deleting a document removes its chunks; it does not affect personal memory or conversations.
@@ -161,7 +161,7 @@ npm ci
 npm test
 npm run build
 cd ..
-python -m uvicorn skysun.main:create_app --factory
+python -m uvicorn skysun.core.main:create_app --factory
 ```
 
 Open `http://127.0.0.1:8000`. FastAPI serves `frontend/dist` when present. Existing API URLs remain available; the web application uses equivalent `/api/...` URLs on the same origin. For frontend development, run `npm run dev` in `frontend/` alongside FastAPI on port 8000; Vite proxies `/api` requests to that server. `VITE_API_BASE_URL` can override the API prefix for a custom deployment. Do not put bearer tokens in build-time environment variables or version control.

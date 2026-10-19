@@ -7,8 +7,8 @@ from uuid import uuid4
 import psycopg
 import pytest
 
-from skysun.knowledge import KnowledgeChunkInput
-from skysun.postgres_knowledge import PostgresKnowledgeStore
+from skysun.rag.knowledge import KnowledgeChunkInput
+from skysun.rag.postgres_knowledge import PostgresKnowledgeStore
 
 _A = (1.0,) + (0.0,) * 1023
 _B = (0.0, 1.0) + (0.0,) * 1022

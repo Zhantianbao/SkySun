@@ -1,4 +1,4 @@
-from skysun.tools import count_words
+from skysun.tool.tools import count_words
 
 
 def test_count_words_uses_whitespace() -> None:

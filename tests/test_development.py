@@ -8,11 +8,11 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.api import build_api
-from skysun.conversation import ConversationService, InMemoryConversationStore
-from skysun.development import PostgresDevelopmentStore
-from skysun.devices import PostgresDeviceStore
-from skysun.postgres_users import PostgresUserStore
+from skysun.core.api import build_api
+from skysun.memory.conversation import ConversationService, InMemoryConversationStore
+from skysun.device.development import PostgresDevelopmentStore
+from skysun.device.devices import PostgresDeviceStore
+from skysun.user.postgres_users import PostgresUserStore
 
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/JXcAAAAASUVORK5CYII=")
 

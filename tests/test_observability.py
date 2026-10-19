@@ -7,23 +7,23 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.api import build_api
-from skysun.conversation import ConversationService, InMemoryConversationStore
-from skysun.knowledge import KnowledgeSearchResult
-from skysun.knowledge_grounding import GroundingStatus
-from skysun.langchain_agent import AgentExecution
-from skysun.observability import (
+from skysun.core.api import build_api
+from skysun.memory.conversation import ConversationService, InMemoryConversationStore
+from skysun.rag.knowledge import KnowledgeSearchResult
+from skysun.rag.knowledge_grounding import GroundingStatus
+from skysun.core.langchain_agent import AgentExecution
+from skysun.evaluation.observability import (
     EvaluationStatus, FeedbackRating, ResponseEvaluator, span, trace_context,
 )
-from skysun.planner import TaskPlan
-from skysun.postgres_observability import PostgresObservabilityStore
-from skysun.postgres_task import PostgresTaskStore
-from skysun.postgres_users import PostgresUserStore
-from skysun.task_runtime import TaskStatus
-from skysun.tool_reliability import run_tool
-from skysun.user_identity import Actor, Role, actor_scope, system_scope
-from skysun.verification import VerificationResult, VerificationStatus
-from skysun.workflow_agent import WorkflowAgent
+from skysun.workflow.planner import TaskPlan
+from skysun.evaluation.postgres_observability import PostgresObservabilityStore
+from skysun.workflow.postgres_task import PostgresTaskStore
+from skysun.user.postgres_users import PostgresUserStore
+from skysun.workflow.task_runtime import TaskStatus
+from skysun.tool.tool_reliability import run_tool
+from skysun.user.user_identity import Actor, Role, actor_scope, system_scope
+from skysun.workflow.verification import VerificationResult, VerificationStatus
+from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 @pytest.fixture

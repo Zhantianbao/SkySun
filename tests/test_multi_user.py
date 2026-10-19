@@ -8,22 +8,22 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from skysun.api import build_api
-from skysun.conversation import ConversationService
-from skysun.knowledge import KnowledgeChunkInput
-from skysun.knowledge_ingestion import KnowledgeIngestionService
-from skysun.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
-from skysun.planner import TaskPlan
-from skysun.postgres_conversation import PostgresConversationStore
-from skysun.postgres_knowledge import PostgresKnowledgeStore
-from skysun.postgres_memory import PostgresMemoryStore
-from skysun.postgres_observability import PostgresObservabilityStore
-from skysun.postgres_task import PostgresTaskStore
-from skysun.postgres_users import PostgresUserStore
-from skysun.task_runtime import TaskStatus
-from skysun.user_identity import Actor, AuthorizationError, LEGACY_USER_ID, Role, actor_scope
-from skysun.workflow import StepRecord, StepState
-from skysun.workflow_agent import WorkflowAgent
+from skysun.core.api import build_api
+from skysun.memory.conversation import ConversationService
+from skysun.rag.knowledge import KnowledgeChunkInput
+from skysun.rag.knowledge_ingestion import KnowledgeIngestionService
+from skysun.memory.memory_curator import MemoryCurationService, MemoryDecision, MemoryPlan
+from skysun.workflow.planner import TaskPlan
+from skysun.memory.postgres_conversation import PostgresConversationStore
+from skysun.rag.postgres_knowledge import PostgresKnowledgeStore
+from skysun.memory.postgres_memory import PostgresMemoryStore
+from skysun.evaluation.postgres_observability import PostgresObservabilityStore
+from skysun.workflow.postgres_task import PostgresTaskStore
+from skysun.user.postgres_users import PostgresUserStore
+from skysun.workflow.task_runtime import TaskStatus
+from skysun.user.user_identity import Actor, AuthorizationError, LEGACY_USER_ID, Role, actor_scope
+from skysun.workflow.workflow import StepRecord, StepState
+from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 @pytest.fixture
@@ -221,7 +221,7 @@ def test_task_ownership_events_and_resume(platform):
         with pytest.raises(KeyError):
             tasks.transition(task.task_id, TaskStatus.FAILED)
 
-    from skysun.langchain_agent import AgentExecution
+    from skysun.core.langchain_agent import AgentExecution
 
     class Agent:
         def execute(self, message, history=(), conversation_id=None, knowledge_question=None):

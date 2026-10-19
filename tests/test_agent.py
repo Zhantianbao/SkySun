@@ -9,9 +9,9 @@ from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr, ValidationError
 
-from skysun.config import Settings
-from skysun.conversation import ConversationMessage
-from skysun.langchain_agent import LangChainAgent
+from skysun.core.config import Settings
+from skysun.memory.conversation import ConversationMessage
+from skysun.core.langchain_agent import LangChainAgent
 
 
 class FakeToolCallingModel(BaseChatModel):
@@ -82,7 +82,7 @@ def test_settings_require_key_and_use_default_model(monkeypatch: pytest.MonkeyPa
 
 
 def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    from skysun import main
+    from skysun.core import main
 
     monkeypatch.setattr(
         main,
@@ -95,9 +95,9 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
     )
     monkeypatch.setattr(main, "create_deepseek", lambda settings: FakeToolCallingModel())
 
-    from skysun.conversation import InMemoryConversationStore
+    from skysun.memory.conversation import InMemoryConversationStore
 
-    from skysun.memory_curator import MemoryPlan
+    from skysun.memory.memory_curator import MemoryPlan
 
     class NoOpCurator:
         def decide(self, context):

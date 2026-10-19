@@ -10,14 +10,14 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
-from skysun.knowledge import (
+from skysun.rag.knowledge import (
     IngestionResult,
     KnowledgeDocument,
     KnowledgeSearchResult,
 )
-from skysun.knowledge_ingestion import KnowledgeIngestionService, chunk_text
-from skysun.langchain_agent import LangChainAgent
-from skysun.knowledge_grounding import GroundingResult, GroundingStatus
+from skysun.rag.knowledge_ingestion import KnowledgeIngestionService, chunk_text
+from skysun.core.langchain_agent import LangChainAgent
+from skysun.rag.knowledge_grounding import GroundingResult, GroundingStatus
 
 _VECTOR_A = (1.0,) + (0.0,) * 1023
 
@@ -184,7 +184,7 @@ def test_agent_knowledge_tool_uses_query_embeddings_and_source_metadata() -> Non
 def test_qwen_adapter_uses_compatible_api_and_validates_vectors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from skysun import embeddings
+    from skysun.rag import embeddings
 
     calls = []
 

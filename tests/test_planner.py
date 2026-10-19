@@ -4,8 +4,8 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessage
 import pytest
 
-from skysun.langchain_planner import LangChainTaskPlanner, PlanningError
-from skysun.planner import PlanStep, TaskPlan, needs_planning
+from skysun.workflow.langchain_planner import LangChainTaskPlanner, PlanningError
+from skysun.workflow.planner import PlanStep, TaskPlan, needs_planning
 
 
 def plan_data(steps):
