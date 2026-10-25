@@ -1,4 +1,4 @@
-# SkySun v1.7.0
+# SkySun v1.7.1
 
 SkySun is a multi-user AI Agent workspace. It combines conversations, curated personal memory, private and shared knowledge, persistent tasks, and execution visibility in one responsive web application. DeepSeek powers reasoning; PostgreSQL and pgvector persist state and retrieve document evidence.
 
@@ -49,7 +49,8 @@ For subsequent starts, use `docker compose up`; use `docker compose down` to sto
 - [v1.4.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.4.1) — Production Nginx SPA routing fix.
 - [v1.5.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.5.0) — Desktop Companion Foundation.
 - [v1.6.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.6.0) — Remote Development Assistant.
-- [v1.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.7.0) — Hosted knowledge embeddings (this version).
+- [v1.7.0](https://github.com/Zhantianbao/SkySun/releases/tag/v1.7.0) — Hosted knowledge embeddings.
+- [v1.7.1](https://github.com/Zhantianbao/SkySun/releases/tag/v1.7.1) — Chinese administrator login and credential bootstrap (this version).
 
 ## Desktop companion
 

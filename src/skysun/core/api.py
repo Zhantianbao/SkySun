@@ -82,7 +82,7 @@ def build_api(
     """注册 HTTP 路由、鉴权依赖和请求处理函数。"""
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
-    app = FastAPI(title="SkySun", version="1.7.0", lifespan=lifespan)
+    app = FastAPI(title="SkySun", version="1.7.1", lifespan=lifespan)
 
     # 调用位置：FastAPI 的 MIDDLEWARE http 请求触发。
     @app.middleware("http")
