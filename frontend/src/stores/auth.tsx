@@ -16,15 +16,7 @@ const userKey = "skysun_user";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState(() => sessionStorage.getItem(tokenKey));
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      return JSON.parse(
-        sessionStorage.getItem(userKey) || "null",
-      ) as User | null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(Boolean(token));
 
   function logout() {
@@ -54,9 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function login(username: string, candidate: string) {
-    const identity = await api<User>("/me", candidate.trim());
+    const identity = await api<User>("/login", "", {
+      method: "POST",
+      body: JSON.stringify({ username: username.trim(), token: candidate.trim() }),
+    });
     if (identity.username.toLowerCase() !== username.trim().toLowerCase()) {
-      throw new Error("用户名与访问令牌不匹配");
+      throw new Error("姓名或密码错误");
     }
     sessionStorage.setItem(tokenKey, candidate.trim());
     sessionStorage.setItem(userKey, JSON.stringify(identity));

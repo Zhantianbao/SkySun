@@ -6,7 +6,7 @@ from contextlib import AbstractAsyncContextManager
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from skysun.memory.conversation import ConversationNotFound, ConversationService
 from skysun.device.device_api import device_router
@@ -19,7 +19,9 @@ from skysun.user.postgres_users import PostgresUserStore
 from skysun.evaluation.postgres_observability import PostgresObservabilityStore
 from skysun.evaluation.observability import FeedbackRating
 from skysun.workflow.task_runtime import TaskStore
-from skysun.user.user_identity import Actor, LEGACY_USER_ID, Role, actor_scope, system_scope
+from skysun.user.user_identity import (
+    Actor, LEGACY_USER_ID, Role, actor_scope, system_scope, normalize_username, normalize_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +43,14 @@ class ChatResponse(BaseModel):
 class UserCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
+    token: SecretStr
     role: Role = Role.USER
+
+
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str
+    token: SecretStr
 
 
 class FeedbackRequest(BaseModel):
@@ -97,6 +106,18 @@ def build_api(
     def health() -> dict:
         return {"status": "ok"}
 
+    @app.post("/login")
+    def login(request: LoginRequest) -> dict:
+        try:
+            username = normalize_username(request.username)
+            token = normalize_token(request.token.get_secret_value())
+        except ValueError:
+            raise HTTPException(status_code=401, detail="姓名或密码错误") from None
+        user = users.authenticate(token) if users is not None else None
+        if user is None or user.username != username:
+            raise HTTPException(status_code=401, detail="姓名或密码错误")
+        return {"user_id": str(user.user_id), "username": user.username, "role": user.role.value}
+
     @app.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest, actor: Actor = Depends(identify)) -> ChatResponse:
         try:
@@ -121,6 +142,7 @@ def build_api(
                 detail="Agent response unavailable",
             ) from exc
 
+    # 用户系统请求令牌验证。
     @app.get("/me")
     def me(actor: Actor = Depends(identify)) -> dict:
         if users is None:
@@ -223,12 +245,14 @@ def build_api(
         if users is None:
             raise HTTPException(status_code=503, detail="User store unavailable")
         try:
-            user, token = users.create_user(request.username, request.role)
+            user, token = users.create_user(
+                request.username, request.role, token=request.token.get_secret_value(),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception as exc:
             if getattr(exc, "sqlstate", None) == "23505":
-                raise HTTPException(status_code=409, detail="Username already exists") from exc
+                raise HTTPException(status_code=409, detail="姓名或邀请码已被使用") from exc
             raise
         return {"user_id": str(user.user_id), "username": user.username,
                 "role": user.role.value, "token": token}

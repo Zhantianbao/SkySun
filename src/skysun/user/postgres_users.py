@@ -1,12 +1,11 @@
 """Local bearer-token identities; only token hashes are stored."""
 
 import hashlib
-import secrets
 from uuid import UUID, uuid4
 
 import psycopg
 
-from skysun.user.user_identity import LEGACY_USER_ID, Role, User, normalize_username
+from skysun.user.user_identity import ADMIN_USER_ID, Role, User, normalize_token, normalize_username
 
 
 def ensure_user_schema(conn: psycopg.Connection) -> None:
@@ -22,8 +21,11 @@ def ensure_user_schema(conn: psycopg.Connection) -> None:
     """)
     conn.execute("""
         INSERT INTO skysun_users (user_id, username, role)
-        VALUES (%s, 'legacy_admin', 'ADMIN') ON CONFLICT (user_id) DO NOTHING
-    """, (LEGACY_USER_ID,))
+        VALUES (%s, '詹天宝', 'ADMIN')
+        ON CONFLICT (user_id) DO UPDATE
+        SET username = EXCLUDED.username, updated_at = now()
+        WHERE skysun_users.username = 'legacy_admin'
+    """, (ADMIN_USER_ID,))
 
 
 class PostgresUserStore:
@@ -41,20 +43,27 @@ class PostgresUserStore:
             ensure_user_schema(conn)
 
     def bootstrap_admin(self, token: str) -> None:
-        """Provision the legacy administrator from a local deployment secret."""
-        if len(token) < 32:
-            raise ValueError("Administrator token must have at least 32 characters")
+        """Synchronize the built-in administrator without changing data ownership."""
+        token = normalize_token(token)
         digest = hashlib.sha256(token.encode()).hexdigest()
         with self._connect() as conn:
             conn.execute("""
-                UPDATE skysun_users SET token_hash = %s, updated_at = now()
+                UPDATE skysun_users
+                SET username = '詹天宝', role = 'ADMIN', token_hash = %s, updated_at = now()
                 WHERE user_id = %s
-            """, (digest, LEGACY_USER_ID))
+            """, (digest, ADMIN_USER_ID))
 
-    def create_user(self, username: str, role: Role = Role.USER) -> tuple[User, str]:
+    # 用于创建用户，返回 User 对象和 token。
+    def create_user(
+        self,
+        username: str,
+        role: Role = Role.USER,
+        *,
+        token: str,
+    ) -> tuple[User, str]:
         username = normalize_username(username)
         role = Role(role)
-        token = secrets.token_urlsafe(32)
+        token = normalize_token(token)
         digest = hashlib.sha256(token.encode()).hexdigest()
         user_id = uuid4()
         with self._connect() as conn:
@@ -66,7 +75,7 @@ class PostgresUserStore:
         return User(row[0], row[1], Role(row[2]), row[3], row[4]), token
 
     def authenticate(self, token: str) -> User | None:
-        if not token or len(token) > 512:
+        if not token:
             return None
         digest = hashlib.sha256(token.encode()).hexdigest()
         with self._connect() as conn:

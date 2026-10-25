@@ -20,7 +20,7 @@ export async function api<T>(
       ...(options.body && !(options.body instanceof FormData)
         ? { "Content-Type": "application/json" }
         : {}),
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   });

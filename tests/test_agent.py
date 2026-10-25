@@ -81,7 +81,13 @@ def test_settings_require_key_and_use_default_model(monkeypatch: pytest.MonkeyPa
         Settings(_env_file=None)
 
 
-def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("token", ["", "   "])
+def test_settings_reject_empty_admin_password(token):
+    with pytest.raises(ValidationError, match="skysun_admin_token"):
+        Settings(_env_file=None, deepseek_api_key="test", database_url="postgresql:///skysun_test", skysun_admin_token=token)
+
+
+def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyPatch, create_account) -> None:
     from skysun.core import main
 
     monkeypatch.setattr(
@@ -117,9 +123,7 @@ def test_composition_root_uses_agent_without_network(monkeypatch: pytest.MonkeyP
         InMemoryConversationStore(), curator=NoOpCurator(),
         knowledge_store=EmptyKnowledgeStore(), embeddings=FakeEmbeddings(),
     ))
-    user, token = main.PostgresUserStore("postgresql:///skysun_test").create_user(
-        "test_" + uuid4().hex[:12]
-    )
+    user, token = create_account(main.PostgresUserStore("postgresql:///skysun_test"))
     try:
         response = client.post("/chat", json={"message": "Count the words"},
                                headers={"Authorization": f"Bearer {token}"})

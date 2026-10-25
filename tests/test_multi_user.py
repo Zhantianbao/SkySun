@@ -19,7 +19,7 @@ from skysun.rag.postgres_knowledge import PostgresKnowledgeStore
 from skysun.memory.postgres_memory import PostgresMemoryStore
 from skysun.evaluation.postgres_observability import PostgresObservabilityStore
 from skysun.workflow.postgres_task import PostgresTaskStore
-from skysun.user.postgres_users import PostgresUserStore
+from skysun.user.postgres_users import PostgresUserStore, ensure_user_schema
 from skysun.workflow.task_runtime import TaskStatus
 from skysun.user.user_identity import Actor, AuthorizationError, LEGACY_USER_ID, Role, actor_scope
 from skysun.workflow.workflow import StepRecord, StepState
@@ -27,7 +27,7 @@ from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 @pytest.fixture
-def platform():
+def platform(create_account):
     url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -40,10 +40,9 @@ def platform():
     knowledge = PostgresKnowledgeStore(url)
     for store in (conversations, memory, tasks, knowledge):
         store.initialize_schema()
-    suffix = uuid4().hex[:10]
-    admin, admin_token = users.create_user("admin_" + suffix, Role.ADMIN)
-    alice, alice_token = users.create_user("alice_" + suffix)
-    bob, bob_token = users.create_user("bob_" + suffix)
+    admin, admin_token = create_account(users, Role.ADMIN)
+    alice, alice_token = create_account(users)
+    bob, bob_token = create_account(users)
     try:
         yield users, conversations, memory, tasks, knowledge, (
             (admin, admin_token), (alice, alice_token), (bob, bob_token)
@@ -66,6 +65,62 @@ def _scope(user):
     return actor_scope(Actor(user.user_id, user.role))
 
 
+def test_old_admin_name_is_migrated_without_changing_identity_or_token(platform):
+    users, *_ = platform
+    with psycopg.connect(users._database_url) as conn:
+        conn.execute("""
+            CREATE TEMP TABLE skysun_users (
+                user_id UUID PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+                role TEXT NOT NULL, token_hash TEXT UNIQUE,
+                created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now()
+            )
+        """)
+        conn.execute("""
+            INSERT INTO skysun_users (user_id, username, role, token_hash)
+            VALUES (%s, 'legacy_admin', 'ADMIN', 'existing-digest')
+        """, (LEGACY_USER_ID,))
+        ensure_user_schema(conn)
+        ensure_user_schema(conn)
+        assert conn.execute("SELECT user_id, username, token_hash FROM skysun_users").fetchone() == (
+            LEGACY_USER_ID, "詹天宝", "existing-digest",
+        )
+        conn.execute("UPDATE skysun_users SET username = '管理员'")
+        ensure_user_schema(conn)
+        assert conn.execute("SELECT username FROM skysun_users").fetchone()[0] == "管理员"
+
+
+@pytest.mark.parametrize("token_length", [8, 513])
+def test_creation_api_requires_token_and_rejects_empty_or_duplicate_credentials(platform, new_username, token_length):
+    users, conversations, _, tasks, _, accounts = platform
+    (admin, admin_token), (alice, alice_token), _ = accounts
+
+    class Agent:
+        def reply(self, message, history=(), conversation_id=None):
+            return "Hello"
+
+    client = TestClient(build_api(ConversationService(Agent(), conversations), users=users, tasks=tasks))
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for payload in ({"username": new_username()}, {"username": new_username(), "token": "   "}):
+        assert client.post("/admin/users", json=payload, headers=headers).status_code == 422
+    for payload in (
+        {"username": new_username(), "token": alice_token},
+        {"username": alice.username, "token": secrets.token_urlsafe(32)},
+    ):
+        assert client.post("/admin/users", json=payload, headers=headers).status_code == 409
+
+    token = secrets.token_urlsafe(400)[:token_length]
+    # Neither creation nor authentication may introduce a token-length policy.
+    response = client.post("/admin/users", json={"username": new_username(), "token": token}, headers=headers)
+    assert response.status_code == 201
+    created_id = UUID(response.json()["user_id"])
+    try:
+        assert response.json()["token"] == token
+        assert users.authenticate(token).user_id == created_id
+    finally:
+        with psycopg.connect(users._database_url) as conn:
+            conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (created_id,))
+
+
 def test_admin_bootstrap_stores_only_token_hash(platform):
     users, _, _, _, _, _ = platform
     with psycopg.connect(users._database_url) as conn:
@@ -84,6 +139,46 @@ def test_admin_bootstrap_stores_only_token_hash(platform):
         with psycopg.connect(users._database_url) as conn:
             conn.execute("UPDATE skysun_users SET token_hash = %s WHERE user_id = %s",
                          (original, LEGACY_USER_ID))
+
+
+def test_login_checks_both_credentials_on_the_server(platform):
+    users, conversations, _, tasks, _, accounts = platform
+    (admin, token), (alice, alice_token), _ = accounts
+
+    class Agent:
+        def reply(self, message, history=(), conversation_id=None):
+            return "Hello"
+
+    client = TestClient(build_api(ConversationService(Agent(), conversations), users=users, tasks=tasks))
+    for user, secret in ((admin, token), (alice, alice_token)):
+        response = client.post("/api/login", json={"username": f" {user.username} ", "token": f" {secret} "})
+        assert response.status_code == 200
+        assert response.json() == {"user_id": str(user.user_id), "username": user.username, "role": user.role.value}
+    for name, secret in ((alice.username, token), (admin.username, "wrong"), ("", token), ("alice", token), (admin.username, " ")):
+        response = client.post("/api/login", json={"username": name, "token": secret})
+        assert response.status_code == 401
+        assert response.json() == {"detail": "姓名或密码错误"}
+    assert client.post("/api/login", json={"username": admin.username}).status_code == 422
+
+
+def test_bootstrap_restores_builtin_admin_and_rotates_password(platform):
+    users, *_ = platform
+    with psycopg.connect(users._database_url) as conn:
+        original = conn.execute("SELECT username, role, token_hash FROM skysun_users WHERE user_id = %s", (LEGACY_USER_ID,)).fetchone()
+    first, second = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    try:
+        with psycopg.connect(users._database_url) as conn:
+            conn.execute("UPDATE skysun_users SET username = '旧管理员', role = 'USER' WHERE user_id = %s", (LEGACY_USER_ID,))
+        users.bootstrap_admin(first)
+        user = users.authenticate(first)
+        assert (user.user_id, user.username, user.role) == (LEGACY_USER_ID, "詹天宝", Role.ADMIN)
+        users.bootstrap_admin(second)
+        users.bootstrap_admin(second)
+        assert users.authenticate(first) is None
+        assert users.authenticate(second).user_id == LEGACY_USER_ID
+    finally:
+        with psycopg.connect(users._database_url) as conn:
+            conn.execute("UPDATE skysun_users SET username = %s, role = %s, token_hash = %s WHERE user_id = %s", (*original, LEGACY_USER_ID))
 
 
 def test_identity_authentication_and_conversation_isolation(platform):
@@ -240,7 +335,7 @@ def test_task_ownership_events_and_resume(platform):
         assert saved.steps[1].output == "Explained."
 
 
-def test_api_bearer_roles_and_cross_user_rejection(platform):
+def test_api_bearer_roles_and_cross_user_rejection(platform, new_username):
     users, conversations, _, tasks, _, accounts = platform
     (admin, admin_token), (alice, alice_token), (bob, bob_token) = accounts
 
@@ -270,10 +365,12 @@ def test_api_bearer_roles_and_cross_user_rejection(platform):
     assert client.get(f"/tasks/{task.task_id}/events", headers=bh).status_code == 404
     assert client.get(f"/tasks/{task.task_id}", headers=admin_h).status_code == 404
     assert client.get(f"/tasks/{task.task_id}", headers=ah).json()["user_id"] == str(alice.user_id)
-    assert client.post("/admin/users", json={"username": "other"}, headers=ah).status_code == 403
-    created = client.post("/admin/users", json={"username": "test_" + uuid4().hex[:10]},
+    payload = {"username": new_username(), "token": secrets.token_urlsafe(32)}
+    assert client.post("/admin/users", json=payload, headers=ah).status_code == 403
+    created = client.post("/admin/users", json=payload,
                           headers=admin_h)
     assert created.status_code == 201
+    assert created.json()["token"] == payload["token"]
     new_id = UUID(created.json()["user_id"])
     assert users.authenticate(created.json()["token"]).user_id == new_id
     with psycopg.connect(users._database_url) as conn:

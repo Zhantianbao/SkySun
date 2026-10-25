@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     database_url: SecretStr
     skysun_admin_token: SecretStr | None = None
 
-    @field_validator("deepseek_api_key", "database_url", "dashscope_api_key")
+    @field_validator("deepseek_api_key", "database_url", "dashscope_api_key", "skysun_admin_token")
     @classmethod
     def require_nonempty_secret(cls, value: SecretStr | None) -> SecretStr | None:
         if value is not None and not value.get_secret_value().strip():

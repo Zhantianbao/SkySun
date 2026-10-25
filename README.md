@@ -16,7 +16,7 @@ flowchart LR
 
 ## Docker local deployment
 
-Install Docker Engine or Docker Desktop with the Compose plugin. Copy `.env.example` to `.env`, then set real `DEEPSEEK_API_KEY` and `DASHSCOPE_API_KEY` values, a random `SKYSUN_ADMIN_TOKEN` of at least 32 characters, and a random hexadecimal `POSTGRES_PASSWORD`. Keep `.env` local and use hexadecimal characters for the database password so it can be inserted safely into the PostgreSQL URL. The example's `DASHSCOPE_BASE_URL` is the Beijing shared endpoint and works with an API key from that region, including the default workspace; it does not require a workspace ID. For another region, use that region's endpoint. A workspace-specific endpoint is also supported.
+Install Docker Engine or Docker Desktop with the Compose plugin. Copy `.env.example` to `.env`, then set real `DEEPSEEK_API_KEY` and `DASHSCOPE_API_KEY` values, a nonempty `SKYSUN_ADMIN_TOKEN` (random generation is recommended), and a random hexadecimal `POSTGRES_PASSWORD`. Keep `.env` local and use hexadecimal characters for the database password so it can be inserted safely into the PostgreSQL URL. The example's `DASHSCOPE_BASE_URL` is the Beijing shared endpoint and works with an API key from that region, including the default workspace; it does not require a workspace ID. For another region, use that region's endpoint. A workspace-specific endpoint is also supported.
 
 ```bash
 cp .env.example .env
@@ -24,7 +24,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. Embedding requests call Model Studio at document ingestion and knowledge search time. The admin token provisions `legacy_admin`; use `POST /api/admin/users` with its bearer token to create ordinary users. The frontend login accepts the username and issued token.
+Open `http://localhost:8080` (or the port set by `SKYSUN_PORT`). The stack contains the Nginx frontend, FastAPI backend, and PostgreSQL 16 with pgvector. Compose enables the `vector` extension on first database creation and stores PostgreSQL data in a named volume. Embedding requests call Model Studio at document ingestion and knowledge search time. The admin token provisions the built-in administrator `詹天宝`; use `POST /api/admin/users` with its bearer token to create ordinary users. Log in with the Chinese name `詹天宝` and the password from `.env` / `SKYSUN_ADMIN_TOKEN`. Startup synchronizes this built-in account to the ADMIN role while preserving its UUID and existing data. Updating the environment token and restarting the backend invalidates the previous password. The frontend submits the name and password to `POST /api/login`, which verifies both on the server; subsequent API calls use the token as a Bearer credential. Keep `.env` out of Git and use HTTPS for a public deployment.
 
 The production Nginx container serves the web app at `/` and returns the same app entry point for direct links such as `/chat`. API requests under `/api/` continue to reach FastAPI.
 
@@ -90,7 +90,7 @@ python -m pip install -e '.[test]'
 python -m pip install -e ./desktop-agent  # Needed for the desktop companion tests.
 ```
 
-PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL`, and a randomly generated `SKYSUN_ADMIN_TOKEN` of at least 32 characters locally using `.env.example` as a template; never commit `.env`. The admin token provisions the `legacy_admin` account at startup. Existing single-user records belong only to this account after migration.
+PostgreSQL 14 must have the pgvector server extension installed. Enable `vector` only in the SkySun development and test databases as a database administrator. Set `DATABASE_URL`, `DEEPSEEK_API_KEY`, `DASHSCOPE_API_KEY`, `DASHSCOPE_BASE_URL`, and a nonempty `SKYSUN_ADMIN_TOKEN` (random generation is recommended) locally using `.env.example` as a template; never commit `.env`. The admin token provisions the built-in administrator `詹天宝` at startup; an existing `legacy_admin` record is renamed without changing its user ID. Existing single-user records belong only to this account after migration.
 
 Start the API:
 
@@ -137,9 +137,9 @@ Multi-step requests now create PostgreSQL task records before planning. The plan
 
 ## Multi-User Agent Platform
 
-HTTP requests use `Authorization: Bearer <token>`. The administrator creates users with `POST /admin/users` using a JSON body such as `{"username":"alice","role":"USER"}`. The response returns the new user's token once; SkySun stores only its hash. `GET /me` reports the authenticated identity. Users can access their own conversations, personal memories through the Agent, tasks, and task events. `GET /admin/summary` reports system counts to administrators without exposing other users' private content. The `/chat` request and response shapes remain unchanged apart from the required authorization header.
+HTTP requests use `Authorization: Bearer <token>`. The administrator creates users with `POST /admin/users` using a JSON body such as `{"username":"张三","role":"USER","token":"your-invite-code"}`. The administrator supplies the token (invitation code); names must contain 2–4 Chinese characters. Tokens are trimmed at both ends and must be nonempty, with no application-level length or character-set restriction. The response returns the supplied token once; SkySun stores only its hash. `GET /me` reports the authenticated identity. Users can access their own conversations, personal memories through the Agent, tasks, and task events. `GET /admin/summary` reports system counts to administrators without exposing other users' private content. The `/chat` request and response shapes remain unchanged apart from the required authorization header.
 
-Personal memories are keyed per user. Global memories are held separately for administrator-managed system information and are never returned by personal-memory retrieval. Existing document knowledge remains globally visible; documents saved under an authenticated user context are private to that user. The local ingestion CLI still creates global documents. Existing single-user conversations, memories, and tasks are assigned to `legacy_admin` during idempotent schema migration. Tokens are local bearer credentials; external OAuth and token rotation UI are not included.
+Personal memories are keyed per user. Global memories are held separately for administrator-managed system information and are never returned by personal-memory retrieval. Existing document knowledge remains globally visible; documents saved under an authenticated user context are private to that user. The local ingestion CLI still creates global documents. Existing single-user conversations, memories, and tasks are assigned to the built-in administrator during idempotent schema migration. Tokens are local bearer credentials; external OAuth and token rotation UI are not included.
 
 ## Agent Observability & Evaluation
 

@@ -27,7 +27,7 @@ from skysun.workflow.workflow_agent import WorkflowAgent
 
 
 @pytest.fixture
-def stores():
+def stores(create_account):
     url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -35,10 +35,9 @@ def stores():
     users, tasks, obs = PostgresUserStore(url), PostgresTaskStore(url), PostgresObservabilityStore(url)
     for store in (users, tasks, obs):
         store.initialize_schema()
-    suffix = uuid4().hex[:10]
-    admin, admin_token = users.create_user("obs_admin_" + suffix, Role.ADMIN)
-    alice, alice_token = users.create_user("obs_alice_" + suffix)
-    bob, bob_token = users.create_user("obs_bob_" + suffix)
+    admin, admin_token = create_account(users, Role.ADMIN)
+    alice, alice_token = create_account(users)
+    bob, bob_token = create_account(users)
     try:
         yield users, tasks, obs, ((admin, admin_token), (alice, alice_token), (bob, bob_token))
     finally:

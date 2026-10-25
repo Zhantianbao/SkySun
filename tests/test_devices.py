@@ -20,7 +20,7 @@ class StubAgent:
 
 
 @pytest.fixture
-def platform():
+def platform(create_account):
     url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -29,9 +29,8 @@ def platform():
     users.initialize_schema()
     devices = PostgresDeviceStore(url)
     devices.initialize_schema()
-    suffix = uuid4().hex[:10]
-    alice, alice_token = users.create_user("alice_" + suffix)
-    bob, bob_token = users.create_user("bob_" + suffix)
+    alice, alice_token = create_account(users)
+    bob, bob_token = create_account(users)
     client = TestClient(build_api(ConversationService(StubAgent(), InMemoryConversationStore()),
                                   users=users, devices=devices))
     try:

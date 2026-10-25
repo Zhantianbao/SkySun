@@ -11,7 +11,7 @@ import { splitSources } from "../src/components/Message";
 
 const identity = {
   user_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-  username: "alice",
+  username: "张三",
   role: "USER",
 };
 
@@ -29,20 +29,19 @@ describe("web application", () => {
       .spyOn(globalThis, "fetch")
       .mockResolvedValue({ ok: true, json: async () => identity } as Response);
     render(<App />);
-    fireEvent.change(screen.getByLabelText("用户名"), {
-      target: { value: "alice" },
+    fireEvent.change(screen.getByLabelText("姓名"), {
+      target: { value: "张三" },
     });
-    fireEvent.change(screen.getByLabelText("访问令牌"), {
+    fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "test-token" },
     });
     fireEvent.click(screen.getByText("进入工作台"));
     await screen.findByText("和 SkySun 对话");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/me",
+      "/api/login",
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-token",
-        }),
+        method: "POST",
+        body: JSON.stringify({ username: "张三", token: "test-token" }),
       }),
     );
     expect(sessionStorage.getItem("skysun_token")).toBe("test-token");
@@ -54,10 +53,10 @@ describe("web application", () => {
       json: async () => identity,
     } as Response);
     render(<App />);
-    fireEvent.change(screen.getByLabelText("用户名"), {
-      target: { value: "bob" },
+    fireEvent.change(screen.getByLabelText("姓名"), {
+      target: { value: "李四" },
     });
-    fireEvent.change(screen.getByLabelText("访问令牌"), {
+    fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "test-token" },
     });
     fireEvent.click(screen.getByText("进入工作台"));
@@ -65,22 +64,45 @@ describe("web application", () => {
     expect(sessionStorage.getItem("skysun_token")).toBeNull();
   });
 
+  it("logs the built-in administrator into a workspace with admin access", async () => {
+    const admin = { ...identity, username: "詹天宝", role: "ADMIN" };
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => admin,
+    } as Response);
+    render(<App />);
+    fireEvent.change(screen.getByLabelText("姓名"), { target: { value: "詹天宝" } });
+    fireEvent.change(screen.getByLabelText("密码"), { target: { value: "admin-secret" } });
+    fireEvent.click(screen.getByText("进入工作台"));
+    const links = await screen.findAllByRole("link", { name: "管理" });
+    expect(links[0]).toHaveAttribute("href", "/admin");
+    expect(JSON.parse(sessionStorage.getItem("skysun_user") || "null")).toEqual(admin);
+  });
+
+  it("ignores a cached administrator identity when no credential is present", async () => {
+    sessionStorage.setItem("skysun_user", JSON.stringify({ ...identity, role: "ADMIN" }));
+    window.history.replaceState({}, "", "/admin");
+    render(<App />);
+    await screen.findByLabelText("密码");
+    expect(window.location.pathname).toBe("/login");
+  });
+
   it("shows an authentication error for an invalid login token", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 401,
-      json: async () => ({ detail: "Invalid authentication" }),
+      json: async () => ({ detail: "姓名或密码错误" }),
     } as Response);
     render(<App />);
-    fireEvent.change(screen.getByLabelText("用户名"), {
-      target: { value: "alice" },
+    fireEvent.change(screen.getByLabelText("姓名"), {
+      target: { value: "张三" },
     });
-    fireEvent.change(screen.getByLabelText("访问令牌"), {
+    fireEvent.change(screen.getByLabelText("密码"), {
       target: { value: "bad-token" },
     });
     fireEvent.click(screen.getByText("进入工作台"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Invalid authentication",
+      "姓名或密码错误",
     );
     expect(sessionStorage.getItem("skysun_token")).toBeNull();
   });

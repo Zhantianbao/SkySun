@@ -55,11 +55,13 @@ def create_app(
 ) -> FastAPI:
     """Build the app; normal runtime initializes all PostgreSQL stores."""
     settings = load_settings()
+
+    #初始化数据库
     database_url = settings.database_url.get_secret_value()
-    users = PostgresUserStore(database_url)
-    users.initialize_schema()
+    usersStore = PostgresUserStore(database_url)
+    usersStore.initialize_schema()
     if settings.skysun_admin_token is not None:
-        users.bootstrap_admin(settings.skysun_admin_token.get_secret_value())
+        usersStore.bootstrap_admin(settings.skysun_admin_token.get_secret_value())
     if store is None:
         postgres_store = PostgresConversationStore(database_url)
         postgres_store.initialize_schema()
@@ -110,7 +112,7 @@ def create_app(
                 await cleanup_task
 
     app = build_api(ConversationService(agent, store, curation), lifespan=lifespan,
-                    users=users, tasks=task_store, observability=observability,
+                    users=usersStore, tasks=task_store, observability=observability,
                     memory=memory_store, knowledge=knowledge_store,
                     ingestion=KnowledgeIngestionService(knowledge_store, embeddings),
                     devices=devices, development=development)

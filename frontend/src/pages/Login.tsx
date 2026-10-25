@@ -39,16 +39,18 @@ export function Login() {
           <p>连接你的知识、记忆与任务，让每一次对话都更有上下文。</p>
         </div>
         <form onSubmit={submit} className="login-form">
-          <label htmlFor="username">用户名</label>
+          <label htmlFor="username">姓名</label>
           <input
             id="username"
             autoComplete="username"
             required
+            pattern="[\u4e00-\u9fff]{2,4}"
+            title="姓名只能包含中文，长度为 2~4 个汉字"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="请输入用户名"
+            placeholder="请输入中文姓名"
           />
-          <label htmlFor="token">访问令牌</label>
+          <label htmlFor="token">密码</label>
           <div className="input-icon">
             <KeyRound size={18} />
             <input
@@ -58,7 +60,7 @@ export function Login() {
               required
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="请输入访问令牌"
+              placeholder="请输入密码"
             />
           </div>
           {error && (
@@ -71,7 +73,7 @@ export function Login() {
             <ArrowRight size={18} />
           </button>
         </form>
-        <p className="login-help">访问令牌由 SkySun 管理员创建并提供。</p>
+        <p className="login-help">请使用中文姓名和管理员提供的密码登录。</p>
       </div>
       <div className="login-visual">
         <div className="visual-orbit orbit-one" />

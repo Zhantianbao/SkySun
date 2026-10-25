@@ -26,6 +26,37 @@ jobs:
           curl --fail --show-error --silent http://127.0.0.1:8080/chat --output /tmp/skysun-chat.html
           cmp /tmp/skysun-index.html /tmp/skysun-chat.html
           curl --fail --show-error http://127.0.0.1:8080/api/health
+      - name: Check Chinese administrator login through Nginx
+        run: |
+          docker compose exec -T backend python - <<'PY'
+          import json
+          import os
+          from urllib.error import HTTPError
+          from urllib.request import Request, urlopen
+
+          token = os.environ["SKYSUN_ADMIN_TOKEN"]
+          def login(username, password):
+              request = Request("http://frontend/api/login", method="POST",
+                                headers={"Content-Type": "application/json"},
+                                data=json.dumps({"username": username, "token": password}).encode())
+              return urlopen(request)
+
+          with login("詹天宝", token) as response:
+              identity = json.load(response)
+          assert identity == {"user_id": "00000000-0000-0000-0000-000000000001",
+                              "username": "詹天宝", "role": "ADMIN"}
+          for username, password in (("张三", token), ("詹天宝", "wrong-password")):
+              try:
+                  login(username, password)
+              except HTTPError as error:
+                  assert error.code == 401
+              else:
+                  raise AssertionError("Invalid login was accepted")
+          request = Request("http://frontend/api/admin/summary",
+                            headers={"Authorization": "Bearer " + token})
+          with urlopen(request) as response:
+              assert response.status == 200
+          PY
       - name: Check device WebSocket through Nginx
         run: |
           docker compose exec -T backend python - <<'PY'
