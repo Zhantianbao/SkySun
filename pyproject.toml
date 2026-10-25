@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skysun"
-version = "1.7.0"
+version = "1.7.1"
 description = "SkySun personal AI agent"
 requires-python = ">=3.11"
 dependencies = [
