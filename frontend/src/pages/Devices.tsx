@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Devices 相关逻辑。
 import { FormEvent, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Camera, Monitor, RefreshCw, Send } from "lucide-react";
@@ -7,22 +8,29 @@ import { useResource } from "../hooks/useResource";
 import { useAuth } from "../stores/auth";
 import type { Device } from "../types";
 
+// 调用位置：Devices 页面格式化设备指标时调用。
 function metric(value: number | null) {
+  /** 将缺失的指标显示为占位内容。 */
   return value === null ? "—" : `${Math.round(value)}%`;
 }
 
+// 调用位置：App 中 /devices 路由调用。
 export function Devices() {
+  /** 展示设备状态并提供截图与便笺操作。 */
   const { token } = useAuth();
   const { data, loading, error, refresh } = useResource<Device[]>("/devices");
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
   const [actionError, setActionError] = useState("");
+  // 页面停留期间轮询设备在线状态，卸载时清理定时器。
   useEffect(() => {
     const timer = window.setInterval(() => void refresh(), 15000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 
+  // 调用位置：Devices 的截图按钮调用。
   async function requestScreenshot(deviceId: string) {
+    /** 请求指定设备采集一张截图。 */
     if (!token) return;
     setNotice(""); setActionError("");
     try {
@@ -33,7 +41,9 @@ export function Devices() {
     }
   }
 
+  // 调用位置：Devices 的便笺表单提交时调用。
   async function sendNote(event: FormEvent, deviceId: string) {
+    /** 向指定设备发送便笺。 */
     event.preventDefault();
     const content = notes[deviceId]?.trim();
     if (!token || !content) return;

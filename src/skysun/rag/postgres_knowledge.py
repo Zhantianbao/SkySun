@@ -1,4 +1,5 @@
 """PostgreSQL/pgvector implementation of SkySun's document knowledge store."""
+# 本文件负责知识检索中的 postgres、knowledge 相关流程。
 
 import math
 from collections.abc import Iterator, Sequence
@@ -22,17 +23,24 @@ from skysun.rag.knowledge import (
 _DOCUMENT_COLUMNS = "id, source_path, source_name, content_hash, created_at, updated_at, owner_id"
 
 
+# 调用位置：src/skysun/rag/postgres_knowledge.py 的 PostgresKnowledgeStore.save_document、src/skysun/rag/postgres_knowledge.py 的 PostgresKnowledgeStore.search 调用。
 def _validate_vector(values: tuple[float, ...]) -> Vector:
+    """校验向量维度和数值是否合法。"""
     if len(values) != EMBEDDING_DIMENSION or not all(math.isfinite(v) for v in values):
         raise ValueError(f"Knowledge embeddings must contain {EMBEDDING_DIMENSION} finite values")
     return Vector(list(values))
 
 
+# 以下集中定义 PostgresKnowledgeStore：存储层相关的数据和操作。
 class PostgresKnowledgeStore:
+    # 调用位置：创建 PostgresKnowledgeStore 实例时调用。
     def __init__(self, database_url: str) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._database_url = database_url
 
+    # 调用位置：PostgresKnowledgeStore 的 initialize_schema 与数据库读写方法调用。
     def _connect(self, register: bool = True) -> psycopg.Connection:
+        """建立数据库连接，并统一连接参数。"""
         try:
             conn = psycopg.connect(self._database_url, connect_timeout=5)
             if register:
@@ -41,16 +49,19 @@ class PostgresKnowledgeStore:
         except psycopg.Error:
             raise RuntimeError("SkySun knowledge PostgreSQL connection failed") from None
 
+    # 调用位置：PostgresKnowledgeStore 的建表与数据读写方法调用。
     @contextmanager
     def _transaction(self, register: bool = True) -> Iterator[psycopg.Connection]:
+        """在事务范围内执行数据库操作。"""
         try:
             with self._connect(register) as conn:
                 yield conn
         except psycopg.Error:
             raise RuntimeError("SkySun knowledge PostgreSQL operation failed") from None
 
+    # 调用位置：core/main.py 的 create_app 初始化存储时调用；相关测试也会直接调用。
     def initialize_schema(self) -> None:
-        """Create only the v0.6 tables; an administrator must enable pgvector first."""
+        """创建当前版本的知识表；向量扩展需要管理员预先启用。"""
         with self._transaction(register=False) as conn:
             ensure_user_schema(conn)
             present = conn.execute(
@@ -121,7 +132,9 @@ class PostgresKnowledgeStore:
                     f"TYPE VECTOR({EMBEDDING_DIMENSION})"
                 )
 
+    # 调用位置：通过 PostgresKnowledgeStore 实例在知识入库、检索服务与 Agent 工具中调用。
     def get_by_path(self, source_path: str) -> KnowledgeDocument | None:
+        """按路径查找已入库文档。"""
         with self._transaction() as conn:
             row = conn.execute(
                 f"SELECT {_DOCUMENT_COLUMNS} FROM knowledge_documents "
@@ -130,8 +143,9 @@ class PostgresKnowledgeStore:
             ).fetchone()
         return KnowledgeDocument(*row) if row else None
 
+    # 调用位置：通过 PostgresKnowledgeStore 实例在知识入库、检索服务与 Agent 工具中调用。
     def list_documents(self, limit: int = 100) -> tuple[KnowledgeDocument, ...]:
-        """List public documents and documents owned by this user."""
+        """列出全局文档和当前用户拥有的私有文档。"""
         with self._transaction() as conn:
             rows = conn.execute(
                 f"SELECT {_DOCUMENT_COLUMNS} FROM knowledge_documents "
@@ -141,6 +155,7 @@ class PostgresKnowledgeStore:
             ).fetchall()
         return tuple(KnowledgeDocument(*row) for row in rows)
 
+    # 调用位置：通过 PostgresKnowledgeStore 实例在知识入库、检索服务与 Agent 工具中调用。
     def save_document(
         self,
         source_path: str,
@@ -148,7 +163,7 @@ class PostgresKnowledgeStore:
         content_hash: str,
         chunks: Sequence[KnowledgeChunkInput],
     ) -> IngestionResult:
-        """Insert or replace metadata and all chunks in one transaction."""
+        """在同一事务中插入或替换文档信息及所有片段。"""
         if not chunks:
             raise ValueError("Knowledge document must have at least one chunk")
         vectors = tuple(_validate_vector(chunk.embedding) for chunk in chunks)
@@ -198,8 +213,9 @@ class PostgresKnowledgeStore:
                 )
         return IngestionResult(document_id, source_path, len(chunks), status)
 
+    # 调用位置：通过 PostgresKnowledgeStore 实例在知识入库、检索服务与 Agent 工具中调用。
     def delete_document(self, source_path: str) -> bool:
-        """Delete an explicitly selected document and cascade to its chunks."""
+        """删除指定文档，并级联删除其知识片段。"""
         with self._transaction() as conn:
             row = conn.execute(
                 "DELETE FROM knowledge_documents WHERE source_path = %s "
@@ -208,13 +224,14 @@ class PostgresKnowledgeStore:
             ).fetchone()
         return row is not None
 
+    # 调用位置：rag/knowledge_grounding.py 的 GroundedKnowledgeService.search 调用。
     def search(
         self,
         query_embedding: tuple[float, ...],
         limit: int = 4,
         max_cosine_distance: float = 0.35,
     ) -> tuple[KnowledgeSearchResult, ...]:
-        """Return nearest chunks by ascending cosine distance (smaller is better)."""
+        """按余弦距离从小到大返回最相近的知识片段。"""
         if not 1 <= limit <= 5:
             raise ValueError("Knowledge search limit must be between 1 and 5")
         if not 0 <= max_cosine_distance <= 2:

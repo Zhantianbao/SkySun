@@ -1,4 +1,5 @@
 """SkySun's HTTP contract, independent of LangChain types."""
+# 本文件负责核心服务中的 api 相关流程。
 
 import logging
 from collections.abc import Callable
@@ -26,6 +27,7 @@ from skysun.user.user_identity import (
 logger = logging.getLogger(__name__)
 
 
+# 以下集中定义 ChatRequest：请求模型相关的数据和操作。
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -33,6 +35,7 @@ class ChatRequest(BaseModel):
     conversation_id: UUID | None = None
 
 
+# 以下集中定义 ChatResponse：响应模型相关的数据和操作。
 class ChatResponse(BaseModel):
     conversation_id: str
     reply: str
@@ -40,6 +43,7 @@ class ChatResponse(BaseModel):
     task_status: str | None = None
 
 
+# 以下集中定义 UserCreate：数据结构或组件相关的数据和操作。
 class UserCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
@@ -47,18 +51,21 @@ class UserCreate(BaseModel):
     role: Role = Role.USER
 
 
+# 以下集中定义 LoginRequest：请求模型相关的数据和操作。
 class LoginRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     username: str
     token: SecretStr
 
 
+# 以下集中定义 FeedbackRequest：请求模型相关的数据和操作。
 class FeedbackRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     rating: FeedbackRating
     comment: str | None = Field(default=None, max_length=1000)
 
 
+# 调用位置：src/skysun/core/main.py 的 create_app、tests/test_api.py 的 make_client、tests/test_api.py 的 test_api_requires_identity_store_by_default 等处调用。
 def build_api(
     conversations: ConversationService,
     lifespan: Callable[[FastAPI], AbstractAsyncContextManager[None]] | None = None,
@@ -72,20 +79,24 @@ def build_api(
     devices: PostgresDeviceStore | None = None,
     development: PostgresDevelopmentStore | None = None,
 ) -> FastAPI:
+    """注册 HTTP 路由、鉴权依赖和请求处理函数。"""
     if users is None and not allow_legacy_unauthenticated:
         raise RuntimeError("An authenticated user store is required")
     app = FastAPI(title="SkySun", version="1.7.0", lifespan=lifespan)
 
+    # 调用位置：FastAPI 的 MIDDLEWARE http 请求触发。
     @app.middleware("http")
     async def api_prefix(request: Request, call_next):
-        """Keep legacy URLs while the web client uses same-origin /api URLs."""
+        """将前端使用的同源接口前缀转换为现有路由路径。"""
         if request.scope["path"].startswith("/api/"):
             request.scope["skysun_api"] = True
             request.scope["path"] = request.scope["path"][4:]
             request.scope["raw_path"] = request.scope["path"].encode()
         return await call_next(request)
 
+    # 调用位置：下方所有声明 Depends(identify) 的受保护路由由 FastAPI 调用。
     def identify(authorization: str | None = Header(default=None)) -> Actor:
+        """从身份令牌识别当前用户，拒绝未登录或无效令牌。"""
         if users is None:
             return Actor(LEGACY_USER_ID, Role.USER)
         if not authorization or not authorization.startswith("Bearer "):
@@ -98,16 +109,23 @@ def build_api(
                                 headers={"WWW-Authenticate": "Bearer"})
         return Actor(user.user_id, user.role)
 
+    # 调用位置：src/skysun/core/api.py 的 build_api.create_user、src/skysun/core/api.py 的 build_api.summary、src/skysun/core/api.py 的 build_api.metrics 等处调用。
     def admin(actor: Actor) -> None:
+        """检查当前用户是否具有管理员权限。"""
         if actor.role is not Role.ADMIN:
             raise HTTPException(status_code=403, detail="Administrator access required")
 
+    # 以下路由处理健康检查、登录和聊天；聊天请求先识别身份，再在用户范围内运行会话服务。
+    # 调用位置：FastAPI 的 GET /health 请求触发。
     @app.get("/health")
     def health() -> dict:
+        """返回服务健康状态。"""
         return {"status": "ok"}
 
+    # 调用位置：FastAPI 的 POST /login 请求触发。
     @app.post("/login")
     def login(request: LoginRequest) -> dict:
+        """校验姓名和令牌并返回登录用户信息。"""
         try:
             username = normalize_username(request.username)
             token = normalize_token(request.token.get_secret_value())
@@ -118,8 +136,10 @@ def build_api(
             raise HTTPException(status_code=401, detail="姓名或密码错误")
         return {"user_id": str(user.user_id), "username": user.username, "role": user.role.value}
 
+    # 调用位置：FastAPI 的 POST /chat 请求触发。
     @app.post("/chat", response_model=ChatResponse)
     def chat(request: ChatRequest, actor: Actor = Depends(identify)) -> ChatResponse:
+        """在当前用户范围内处理聊天并返回回复及任务状态。"""
         try:
             with actor_scope(actor):
                 conversation_id, reply = conversations.chat(
@@ -143,8 +163,10 @@ def build_api(
             ) from exc
 
     # 用户系统请求令牌验证。
+    # 调用位置：FastAPI 的 GET /me 请求触发。
     @app.get("/me")
     def me(actor: Actor = Depends(identify)) -> dict:
+        """读取当前登录用户的信息。"""
         if users is None:
             return {"user_id": str(actor.user_id), "username": "legacy_admin", "role": actor.role.value}
         user = users.get(actor.user_id)
@@ -152,9 +174,12 @@ def build_api(
             raise HTTPException(status_code=401, detail="Invalid authentication")
         return {"user_id": str(user.user_id), "username": user.username, "role": user.role.value}
 
+    # 以下读取会话、记忆和知识数据，统一通过当前身份限定可见范围。
+    # 调用位置：FastAPI 的 GET /conversations/{conversation_id}/messages 请求触发。
     @app.get("/conversations/{conversation_id}/messages")
     def conversation_messages(conversation_id: UUID,
                               actor: Actor = Depends(identify)) -> list[dict]:
+        """读取指定会话的消息历史。"""
         try:
             with actor_scope(actor):
                 messages = conversations.history(str(conversation_id))
@@ -162,18 +187,22 @@ def build_api(
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
         return [{"role": item.role, "content": item.content} for item in messages]
 
+    # 调用位置：FastAPI 的 GET /conversations 请求触发。
     @app.get("/conversations")
     def conversation_list(limit: int = Query(default=50, ge=1, le=100),
                           actor: Actor = Depends(identify)) -> list[dict]:
+        """列出当前用户的会话。"""
         with actor_scope(actor):
             rows = conversations.list_conversations(limit)
         return [{"conversation_id": row.conversation_id, "title": row.title,
                  "created_at": row.created_at.isoformat(),
                  "updated_at": row.updated_at.isoformat()} for row in rows]
 
+    # 调用位置：FastAPI 的 GET /memory 请求触发。
     @app.get("/memory")
     def personal_memories(limit: int = Query(default=20, ge=1, le=20),
                           actor: Actor = Depends(identify)) -> list[dict]:
+        """列出当前用户的长期记忆。"""
         if memory is None:
             raise HTTPException(status_code=503, detail="Memory store unavailable")
         with actor_scope(actor):
@@ -185,9 +214,11 @@ def build_api(
                  "created_at": row.created_at.isoformat(),
                  "updated_at": row.updated_at.isoformat()} for row in rows]
 
+    # 调用位置：FastAPI 的 GET /knowledge/documents 请求触发。
     @app.get("/knowledge/documents")
     def knowledge_documents(limit: int = Query(default=100, ge=1, le=200),
                             actor: Actor = Depends(identify)) -> list[dict]:
+        """列出可见的知识文档。"""
         if knowledge is None:
             raise HTTPException(status_code=503, detail="Knowledge store unavailable")
         with actor_scope(actor):
@@ -197,9 +228,12 @@ def build_api(
                  "scope": "global" if row.owner_id is None else "personal",
                  "updated_at": row.updated_at.isoformat()} for row in rows]
 
+    # 上传流程校验文件，再交给入库服务完成分段、向量化和保存。
+    # 调用位置：FastAPI 的 POST /knowledge/documents 请求触发。
     @app.post("/knowledge/documents", status_code=201)
     def upload_document(file: UploadFile = File(...),
                         actor: Actor = Depends(identify)) -> dict:
+        """接收文档并交给知识入库服务。"""
         if ingestion is None:
             raise HTTPException(status_code=503, detail="Knowledge ingestion unavailable")
         filename = (file.filename or "").replace("\\", "/").split("/")[-1]
@@ -225,9 +259,11 @@ def build_api(
         return {"document_id": str(result.document_id), "source_path": result.source_path,
                 "chunk_count": result.chunk_count, "status": result.status}
 
+    # 调用位置：FastAPI 的 GET /tasks 请求触发。
     @app.get("/tasks")
     def task_list(limit: int = Query(default=50, ge=1, le=200),
                   actor: Actor = Depends(identify)) -> list[dict]:
+        """列出当前用户的任务。"""
         if tasks is None:
             raise HTTPException(status_code=503, detail="Task store unavailable")
         with actor_scope(actor):
@@ -239,8 +275,11 @@ def build_api(
                  "steps": [{"step_id": step.step_id, "state": step.state.value}
                            for step in row.steps]} for row in rows]
 
+    # 以下管理接口先核对管理员角色，再提供用户创建与系统观测数据。
+    # 调用位置：FastAPI 的 POST /admin/users 请求触发。
     @app.post("/admin/users", status_code=201)
     def create_user(request: UserCreate, actor: Actor = Depends(identify)) -> dict:
+        """创建新用户并保存令牌摘要。"""
         admin(actor)
         if users is None:
             raise HTTPException(status_code=503, detail="User store unavailable")
@@ -257,8 +296,10 @@ def build_api(
         return {"user_id": str(user.user_id), "username": user.username,
                 "role": user.role.value, "token": token}
 
+    # 调用位置：FastAPI 的 GET /admin/summary 请求触发。
     @app.get("/admin/summary")
     def summary(actor: Actor = Depends(identify)) -> dict:
+        """返回管理端的汇总信息。"""
         admin(actor)
         if users is None or tasks is None:
             raise HTTPException(status_code=503, detail="System stores unavailable")
@@ -266,17 +307,21 @@ def build_api(
             unfinished = tasks.list_unfinished()
         return {"user_count": len(users.list_users()), "unfinished_task_count": len(unfinished)}
 
+    # 调用位置：FastAPI 的 GET /admin/metrics 请求触发。
     @app.get("/admin/metrics")
     def metrics(actor: Actor = Depends(identify)) -> dict:
+        """汇总任务和观测指标。"""
         admin(actor)
         if observability is None:
             raise HTTPException(status_code=503, detail="Observability unavailable")
         with actor_scope(actor):
             return observability.metrics()
 
+    # 调用位置：FastAPI 的 GET /admin/traces 请求触发。
     @app.get("/admin/traces")
     def traces(limit: int = Query(default=100, ge=1, le=200),
                task_id: UUID | None = None, actor: Actor = Depends(identify)) -> list[dict]:
+        """列出最近的执行轨迹。"""
         admin(actor)
         if observability is None:
             raise HTTPException(status_code=503, detail="Observability unavailable")
@@ -288,9 +333,11 @@ def build_api(
                  "finished_at": row.finished_at.isoformat() if row.finished_at else None,
                  "duration_ms": row.duration_ms, "metadata": row.metadata} for row in rows]
 
+    # 调用位置：FastAPI 的 GET /admin/evaluations 请求触发。
     @app.get("/admin/evaluations")
     def evaluations(limit: int = Query(default=100, ge=1, le=200),
                     actor: Actor = Depends(identify)) -> list[dict]:
+        """列出回答评估记录。"""
         admin(actor)
         if observability is None:
             raise HTTPException(status_code=503, detail="Observability unavailable")
@@ -303,8 +350,11 @@ def build_api(
                  "created_at": row.created_at.isoformat() if row.created_at else None}
                 for row in rows]
 
+    # 以下任务详情、活动和反馈接口均先按当前用户读取任务。
+    # 调用位置：FastAPI 的 GET /tasks/{task_id} 请求触发。
     @app.get("/tasks/{task_id}")
     def task_detail(task_id: UUID, actor: Actor = Depends(identify)) -> dict:
+        """读取指定任务的详情。"""
         if tasks is None:
             raise HTTPException(status_code=503, detail="Task store unavailable")
         try:
@@ -317,8 +367,10 @@ def build_api(
                 "steps": [{"step_id": step.step_id, "state": step.state.value}
                           for step in task.steps]}
 
+    # 调用位置：FastAPI 的 GET /tasks/{task_id}/events 请求触发。
     @app.get("/tasks/{task_id}/events")
     def task_events(task_id: UUID, actor: Actor = Depends(identify)) -> list[dict]:
+        """读取指定任务的事件记录。"""
         if tasks is None:
             raise HTTPException(status_code=503, detail="Task store unavailable")
         try:
@@ -331,8 +383,10 @@ def build_api(
                  "created_at": event.created_at.isoformat() if event.created_at else None}
                 for event in events]
 
+    # 调用位置：FastAPI 的 GET /tasks/{task_id}/activity 请求触发。
     @app.get("/tasks/{task_id}/activity")
     def task_activity(task_id: UUID, actor: Actor = Depends(identify)) -> list[dict]:
+        """合并任务步骤与事件供页面展示。"""
         if observability is None:
             raise HTTPException(status_code=503, detail="Observability unavailable")
         try:
@@ -344,9 +398,11 @@ def build_api(
                  "started_at": row.started_at.isoformat(),
                  "duration_ms": row.duration_ms} for row in rows]
 
+    # 调用位置：FastAPI 的 POST /tasks/{task_id}/feedback 请求触发。
     @app.post("/tasks/{task_id}/feedback")
     def feedback(task_id: UUID, request: FeedbackRequest,
                  actor: Actor = Depends(identify)) -> dict:
+        """保存当前用户对回答的反馈。"""
         if observability is None:
             raise HTTPException(status_code=503, detail="Observability unavailable")
         try:

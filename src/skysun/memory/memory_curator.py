@@ -1,4 +1,5 @@
 """SkySun-owned structured memory curation and application rules."""
+# 本文件负责会话与记忆中的 memory、curator 相关流程。
 
 import logging
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from skysun.memory.memory import MemoryCandidate, MemoryChange, MemoryStore, Per
 logger = logging.getLogger(__name__)
 
 
+# 以下集中定义 MemoryDecision：数据结构或组件相关的数据和操作。
 class MemoryDecision(BaseModel):
     """One proposed change derived from the current user's message."""
 
@@ -33,6 +35,7 @@ class MemoryDecision(BaseModel):
     )
 
 
+# 以下集中定义 MemoryPlan：计划数据相关的数据和操作。
 class MemoryPlan(BaseModel):
     """At most three structured decisions for one successful user turn."""
 
@@ -41,6 +44,7 @@ class MemoryPlan(BaseModel):
     decisions: list[MemoryDecision] = Field(default_factory=list, max_length=3)
 
 
+# 以下集中定义 CurationContext：数据结构或组件相关的数据和操作。
 @dataclass(frozen=True)
 class CurationContext:
     user_message: str
@@ -49,12 +53,15 @@ class CurationContext:
     conversation_id: UUID
 
 
+# 以下集中定义 MemoryCurator：数据结构或组件相关的数据和操作。
 class MemoryCurator(Protocol):
-    def decide(self, context: CurationContext) -> MemoryPlan: ...
+    # 调用位置：记忆整理服务调用实现类生成决策。
+    def decide(self, context: CurationContext) -> MemoryPlan: """根据对话和已有记忆生成整理决策。"""; ...
 
 
+# 调用位置：src/skysun/memory/langchain_memory_curator.py 的 _as_plan、src/skysun/memory/memory_curator.py 的 create_candidates、src/skysun/memory/memory_curator.py 的 MemoryCurationService.process 等处调用。
 def validate_plan(plan: MemoryPlan) -> tuple[MemoryChange, ...]:
-    """Validate every action before any database write; reject malformed plans."""
+    """在写入数据库前校验每项记忆动作，拒绝格式错误的计划。"""
     if len(plan.decisions) > 3:
         raise ValueError("Too many memory decisions")
     changes: list[MemoryChange] = []
@@ -77,8 +84,9 @@ def validate_plan(plan: MemoryPlan) -> tuple[MemoryChange, ...]:
     return tuple(changes)
 
 
+# 调用位置：src/skysun/memory/memory_curator.py 的 MemoryCurationService.process、tests/test_memory_curator.py 的 test_candidate_creation_keeps_importance_and_conversation_source 调用。
 def create_candidates(plan: MemoryPlan, source_conversation_id: UUID) -> tuple[MemoryCandidate, ...]:
-    """Represent proposed upserts separately from confirmed personal memories."""
+    """将提议保存的内容整理为候选记忆，与已确认的个人记忆区分。"""
     validate_plan(plan)
     return tuple(
         MemoryCandidate(
@@ -92,10 +100,11 @@ def create_candidates(plan: MemoryPlan, source_conversation_id: UUID) -> tuple[M
     )
 
 
+# 调用位置：src/skysun/memory/memory_curator.py 的 MemoryCurationService.process 调用。
 def accept_candidate(
     candidate: MemoryCandidate, current_memories: tuple[PersonalMemory, ...]
 ) -> bool:
-    """Reject low-value and duplicate facts before writing confirmed memory."""
+    """在保存前剔除低价值或重复的候选记忆。"""
     if candidate.importance == "low":
         return False
     normalized_content = " ".join(candidate.content.casefold().split())
@@ -105,6 +114,7 @@ def accept_candidate(
     )
 
 
+# 以下集中定义 MemoryCurationService：服务层相关的数据和操作。
 class MemoryCurationService:
     """Best-effort curation after conversation persistence.
 
@@ -112,16 +122,20 @@ class MemoryCurationService:
     One plan is validated before a single transactional memory-store call.
     """
 
+    # 调用位置：创建 MemoryCurationService 实例时调用。
     def __init__(self, curator: MemoryCurator, store: MemoryStore) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._curator = curator
         self._store = store
 
+    # 调用位置：通过 MemoryCurationService 实例在会话服务、记忆工具与整理服务中调用。
     def process(
         self,
         user_message: str,
         history: tuple[ConversationMessage, ...],
         conversation_id: str,
     ) -> None:
+        """处理一轮对话并整理长期记忆。"""
         context = CurationContext(
             user_message=user_message,
             recent_history=history[-6:],

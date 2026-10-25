@@ -1,4 +1,5 @@
 """Developer CLI for explicit local document ingestion."""
+# 本文件负责知识检索中的 ingest 相关流程。
 
 import argparse
 import json
@@ -12,7 +13,9 @@ from skysun.rag.knowledge_ingestion import KnowledgeIngestionService
 from skysun.rag.postgres_knowledge import PostgresKnowledgeStore
 
 
+# 调用位置：命令行入口调用。
 def main() -> int:
+    """解析启动参数并进入程序主流程。"""
     parser = argparse.ArgumentParser(description="Ingest one UTF-8 Markdown or text document")
     parser.add_argument("path", help="Local .md, .markdown, or .txt path")
     parser.add_argument(

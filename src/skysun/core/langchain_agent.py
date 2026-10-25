@@ -1,4 +1,5 @@
 """LangChain adapter for SkySun's conversation-aware Agent interface."""
+# 本文件负责核心服务中的 langchain、agent 相关流程。
 
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -29,6 +30,7 @@ from skysun.tool.tools import (
 )
 
 
+# 以下集中定义 AgentExecution：数据结构或组件相关的数据和操作。
 @dataclass(frozen=True)
 class AgentExecution:
     answer: str
@@ -38,7 +40,9 @@ class AgentExecution:
     sources: tuple[KnowledgeSearchResult, ...]
 
 
+# 以下集中定义 LangChainAgent：Agent 执行层相关的数据和操作。
 class LangChainAgent:
+    # 调用位置：创建 LangChainAgent 实例时调用。
     def __init__(
         self,
         model: BaseChatModel,
@@ -48,6 +52,7 @@ class LangChainAgent:
         evidence_evaluator: EvidenceEvaluator | None = None,
         query_rewriter: QueryRewriter | None = None,
     ) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         if (knowledge_store is None) != (embeddings is None):
             raise ValueError("Knowledge store and embeddings must be supplied together")
         self._model = model
@@ -57,14 +62,17 @@ class LangChainAgent:
         self._evidence_evaluator = evidence_evaluator
         self._query_rewriter = query_rewriter
 
+    # 调用位置：ConversationService.chat 通过 Agent 接口调用。
     def reply(
         self,
         message: str,
         history: Sequence[ConversationMessage] = (),
         conversation_id: str | None = None,
     ) -> str:
+        """生成并返回本次对话的最终回复。"""
         return self.execute(message, history, conversation_id).answer
 
+    # 调用位置：LangChainAgent 内的 reply 调用。
     def execute(
         self,
         message: str,
@@ -72,11 +80,13 @@ class LangChainAgent:
         conversation_id: str | None = None,
         knowledge_question: str | None = None,
     ) -> AgentExecution:
-        """Run one Agent invocation with tools scoped to this conversation."""
+        """在当前会话的用户范围内调用智能代理和工具，收集回答与执行信息。"""
         tool_failures: set[str] = set()
         tools_used: set[str] = set()
 
+        # 调用位置：src/skysun/core/langchain_agent.py 的 LangChainAgent.execute.count_words_tool、src/skysun/core/langchain_agent.py 的 LangChainAgent.execute.remember_memory_tool、src/skysun/core/langchain_agent.py 的 LangChainAgent.execute.recall_memories_tool 等处调用。
         def record_tool_result(name: str, result: str) -> str:
+            """记录工具使用情况和结果，供回复评估使用。"""
             tools_used.add(name)
             if is_tool_failure(result):
                 tool_failures.add(name)
@@ -84,13 +94,16 @@ class LangChainAgent:
                 tool_failures.discard(name)
             return result
 
+        # 调用位置：src/skysun/core/langchain_agent.py 的 LangChainAgent.execute 调用。
         def record_validation_failure(name: str, result: str) -> None:
+            """记录参数校验失败的工具调用。"""
             tools_used.add(name)
             tool_failures.add(name)
 
+        # 调用位置：LangChainAgent 的调用方通过该方法使用。
         @tool("count_words")
         def count_words_tool(text: str) -> str:
-            """Count whitespace-separated words in text."""
+            """统计文本中由空白字符分隔的词数。"""
             return record_tool_result("count_words", run_tool(
                 "count_words", lambda: count_words(text)
             ))
@@ -104,16 +117,18 @@ class LangChainAgent:
             memory_store = self._memory_store
             source_id = UUID(conversation_id) if conversation_id else None
 
+            # 调用位置：LangChain 的智能代理在需要保存个人记忆时调用此工具。
             @tool("remember_memory")
             def remember_memory_tool(key: str, content: str, category: str = "") -> str:
-                """Save a durable user fact, preference, or goal. Reuse a stable snake_case semantic key to update. Never save passwords, API keys, tokens, private keys, or credentials."""
+                """用户明确要求记住时，保存长期有效的事实、偏好或目标；更新时复用稳定的语义键，不保存密码、接口密钥、令牌、私钥或其他凭据。"""
                 return record_tool_result("remember_memory", run_tool("remember_memory", lambda: remember_memory(
                     memory_store, key, content, category or None, source_id
                 )))
 
+            # 调用位置：LangChain 的智能代理在回答用户个人信息时调用此工具。
             @tool("recall_memories")
             def recall_memories_tool(query: str = "") -> str:
-                """Retrieve up to 20 personal memories for user-specific questions. Pass relevant keywords for basic lexical lookup; empty query lists recent memories. Never invent absent memories."""
+                """回答涉及用户个人情况的问题时，最多检索二十条个人记忆；用相关关键词查询，空查询列出近期记忆，不编造不存在的记忆。"""
                 nonlocal memory_read_failure
                 if memory_read_failure is not None:
                     return memory_read_failure
@@ -122,9 +137,10 @@ class LangChainAgent:
                     memory_read_failure = result
                 return record_tool_result("recall_memories", result)
 
+            # 调用位置：LangChain 的智能代理在用户要求遗忘时调用此工具。
             @tool("forget_memory")
             def forget_memory_tool(key: str) -> str:
-                """Delete a stored personal memory by its semantic key when the user explicitly asks to forget it."""
+                """仅在用户明确要求遗忘时，按语义键删除个人记忆。"""
                 return record_tool_result("forget_memory", run_tool(
                     "forget_memory", lambda: forget_memory(memory_store, key)
                 ))
@@ -138,11 +154,14 @@ class LangChainAgent:
             knowledge_store = self._knowledge_store
             embeddings = self._embeddings
 
+            # 调用位置：LangChain 的智能代理在回答私有文档问题时调用此工具。
             @tool("search_knowledge")
             def search_knowledge_tool(query: str, limit: int = 4) -> str:
-                """Find validated evidence for a question about stored documents. Call once per user question. The application controls any retry. Do not use for personal memory or general facts."""
+                """针对已存文档检索经过核对的证据；每个问题调用一次，重试由应用控制，不用于个人记忆或通用事实。"""
                 nonlocal knowledge_outcome
+                # 调用位置：作为回调交给工具执行器调用。
                 def execute() -> str:
+                    """执行一次知识检索，并缓存已经核对的证据。"""
                     nonlocal knowledge_outcome
                     if knowledge_outcome is None:
                         evaluator = self._evidence_evaluator or LangChainEvidenceEvaluator(self._model)

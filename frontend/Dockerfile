@@ -1,3 +1,4 @@
+# 第一阶段编译 React 静态资源，第二阶段交给 Nginx 提供页面服务。
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

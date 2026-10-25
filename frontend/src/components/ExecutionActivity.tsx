@@ -1,3 +1,4 @@
+// 本文件负责前端数据与组件中的 ExecutionActivity 相关逻辑。
 import { Activity, CheckCircle2, CircleDashed, XCircle } from "lucide-react";
 import type { TaskActivity } from "../types";
 
@@ -15,6 +16,7 @@ const labels: Record<string, string> = {
   direct_execution: "处理请求",
 };
 
+// 调用位置：Chat 页面展示执行过程时调用。
 export function ExecutionActivity({
   activity,
   busy,
@@ -22,6 +24,7 @@ export function ExecutionActivity({
   activity: TaskActivity[];
   busy: boolean;
 }) {
+  /** 呈现任务步骤、事件和执行状态。 */
   const visible = activity.filter((item) => item.stage in labels).slice(0, 6);
   if (!busy && visible.length === 0) return null;
   const current = visible[0];

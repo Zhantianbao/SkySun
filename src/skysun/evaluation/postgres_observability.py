@@ -1,4 +1,5 @@
 """PostgreSQL traces, response evaluations, feedback, and derived metrics."""
+# 本文件负责运行观测与评估中的 postgres、observability 相关流程。
 
 import hashlib
 from uuid import UUID, uuid4
@@ -22,7 +23,9 @@ _META_KEYS = {"step_id", "tool_name", "grounding_status", "source_count", "error
               "verification_status", "workflow_status", "tool_count", "result_status"}
 
 
+# 调用位置：src/skysun/evaluation/postgres_observability.py 的 PostgresObservabilityStore.start_trace、src/skysun/evaluation/postgres_observability.py 的 PostgresObservabilityStore.finish_trace 调用。
 def _metadata(value: dict | None) -> dict:
+    """清理并序列化轨迹附加数据。"""
     result = {}
     for key, item in (value or {}).items():
         if key not in _META_KEYS or not isinstance(item, (str, int, float, bool)):
@@ -31,24 +34,33 @@ def _metadata(value: dict | None) -> dict:
     return result
 
 
+# 以下集中定义 PostgresObservabilityStore：存储层相关的数据和操作。
 class PostgresObservabilityStore:
+    # 调用位置：创建 PostgresObservabilityStore 实例时调用。
     def __init__(self, database_url: str) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._database_url = database_url
 
+    # 调用位置：PostgresObservabilityStore 的 initialize_schema 与数据库读写方法调用。
     def _connect(self) -> psycopg.Connection:
+        """建立数据库连接，并统一连接参数。"""
         try:
             return psycopg.connect(self._database_url, connect_timeout=5)
         except psycopg.Error:
             raise RuntimeError("Cannot connect to SkySun observability PostgreSQL") from None
 
+    # 调用位置：PostgresObservabilityStore 内的 start_trace、finish_trace、list_traces 调用。
     @staticmethod
     def _owner(conn: psycopg.Connection, task_id: UUID) -> UUID:
+        """取得当前操作的数据所属用户。"""
         row = conn.execute("SELECT user_id FROM agent_tasks WHERE task_id = %s", (task_id,)).fetchone()
         if row is None or (scoped_user_id() is not None and row[0] != scoped_user_id()):
             raise KeyError(task_id)
         return row[0]
 
+    # 调用位置：core/main.py 的 create_app 初始化存储时调用；相关测试也会直接调用。
     def initialize_schema(self) -> None:
+        """创建或更新当前存储所需的数据表和索引。"""
         with self._connect() as conn:
             ensure_user_schema(conn)
             conn.execute("""
@@ -96,7 +108,9 @@ class PostgresObservabilityStore:
                 )
             """)
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def start_trace(self, task_id: UUID, stage: str, metadata: dict | None = None) -> UUID:
+        """持久化新执行轨迹。"""
         if stage not in _STAGES:
             raise ValueError("Unknown trace stage")
         trace_id = uuid4()
@@ -108,7 +122,9 @@ class PostgresObservabilityStore:
             """, (trace_id, task_id, user_id, stage, Jsonb(_metadata(metadata))))
         return trace_id
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def finish_trace(self, trace_id: UUID, status: str, metadata: dict | None = None) -> None:
+        """完成执行轨迹并保存结果。"""
         if status not in ("SUCCESS", "FAILED", "REVIEW"):
             raise ValueError("Unknown trace status")
         with self._connect() as conn:
@@ -127,7 +143,9 @@ class PostgresObservabilityStore:
                 WHERE trace_id = %s
             """, (status, Jsonb(details), trace_id))
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def list_traces(self, task_id: UUID | None = None, limit: int = 100) -> tuple[TraceRecord, ...]:
+        """查询可见的执行轨迹。"""
         if not 1 <= limit <= 200:
             raise ValueError("Trace limit must be between 1 and 200")
         with self._connect() as conn:
@@ -143,7 +161,9 @@ class PostgresObservabilityStore:
             """, (task_id, task_id, scoped_user_id(), scoped_user_id(), limit)).fetchall()
         return tuple(TraceRecord(*row) for row in rows)
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def save_evaluation(self, result: EvaluationResult) -> EvaluationResult:
+        """保存回答评估结果。"""
         if not 0 <= result.score <= 100:
             raise ValueError("Invalid evaluation score")
         with self._connect() as conn:
@@ -170,7 +190,9 @@ class PostgresObservabilityStore:
                                 result.reasons, result.grounding_correct, result.complete,
                                 result.unsupported_claims, row[0])
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def list_evaluations(self, limit: int = 100) -> tuple[EvaluationResult, ...]:
+        """查询可见的回答评估。"""
         if not 1 <= limit <= 200:
             raise ValueError("Evaluation limit must be between 1 and 200")
         with self._connect() as conn:
@@ -185,8 +207,10 @@ class PostgresObservabilityStore:
                                       tuple(row[4]), row[5], row[6], tuple(row[7]), row[8])
                      for row in rows)
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def save_feedback(self, task_id: UUID, rating: FeedbackRating,
                       comment: str | None = None) -> FeedbackRecord:
+        """保存用户反馈并关联原任务。"""
         rating = FeedbackRating(rating)
         comment = comment.strip() if comment is not None else None
         if comment and len(comment) > 1000:
@@ -211,7 +235,9 @@ class PostgresObservabilityStore:
         return FeedbackRecord(row[0], row[1], row[2], FeedbackRating(row[3]),
                               row[4], row[5], row[6], row[7])
 
+    # 调用位置：通过 PostgresObservabilityStore 实例在工作流 Agent 和管理接口中调用。
     def metrics(self) -> dict:
+        """汇总任务和观测指标。"""
         require_admin()
         with self._connect() as conn:
             task = conn.execute("""

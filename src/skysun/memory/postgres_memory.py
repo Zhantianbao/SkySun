@@ -1,4 +1,5 @@
 """PostgreSQL personal memories scoped to users, with separate global memories."""
+# 本文件负责会话与记忆中的 postgres、memory 相关流程。
 
 import re
 from collections.abc import Iterator
@@ -15,22 +16,30 @@ from skysun.user.user_identity import LEGACY_USER_ID, owner_id, require_admin
 _COLUMNS = "id, memory_key, content, category, source_conversation_id, created_at, updated_at, user_id"
 
 
+# 调用位置：src/skysun/memory/postgres_memory.py 的 PostgresMemoryStore._connect、src/skysun/memory/postgres_memory.py 的 PostgresMemoryStore._transaction、tests/test_postgres_memory.py 的 test_only_connection_failures_are_retryable 等处调用。
 def _is_transient(error: psycopg.OperationalError) -> bool:
-    """Retry lost connections and server restarts, not authentication failures."""
+    """判断数据库错误是否属于可重试的临时连接故障，身份验证失败不会重试。"""
     return error.sqlstate is None or error.sqlstate.startswith("08") or error.sqlstate in {
         "57P01", "57P02", "57P03",
     }
 
 
+# 调用位置：src/skysun/memory/postgres_memory.py 的 PostgresMemoryStore.remember、src/skysun/memory/postgres_memory.py 的 PostgresMemoryStore.get、src/skysun/memory/postgres_memory.py 的 PostgresMemoryStore.list_memories 等处调用。
 def _memory(row: tuple) -> PersonalMemory:
+    """将数据库行转换为个人记忆对象。"""
     return PersonalMemory(*row)
 
 
+# 以下集中定义 PostgresMemoryStore：存储层相关的数据和操作。
 class PostgresMemoryStore:
+    # 调用位置：创建 PostgresMemoryStore 实例时调用。
     def __init__(self, database_url: str) -> None:
+        """保存数据库连接地址和对象依赖。"""
         self._database_url = database_url
 
+    # 调用位置：PostgresMemoryStore 的 initialize_schema 与数据库读写方法调用。
     def _connect(self) -> psycopg.Connection:
+        """建立数据库连接并处理连接异常。"""
         try:
             return psycopg.connect(self._database_url, connect_timeout=5)
         except psycopg.OperationalError as error:
@@ -43,8 +52,10 @@ class PostgresMemoryStore:
                 "Cannot connect to SkySun PostgreSQL; check DATABASE_URL and server availability"
             ) from None
 
+    # 调用位置：PostgresMemoryStore 的建表与数据读写方法调用。
     @contextmanager
     def _transaction(self) -> Iterator[psycopg.Connection]:
+        """在事务范围内执行数据库操作。"""
         try:
             with self._connect() as conn:
                 yield conn
@@ -55,8 +66,9 @@ class PostgresMemoryStore:
         except psycopg.Error:
             raise RuntimeError("Personal memory PostgreSQL operation failed") from None
 
+    # 调用位置：core/main.py 的 create_app 初始化存储时调用；相关测试也会直接调用。
     def initialize_schema(self) -> None:
-        """Create the table idempotently without changing existing data."""
+        """以可重复执行的方式创建记忆表，并保留已有数据。"""
         with self._transaction() as conn:
             ensure_user_schema(conn)
             conn.execute(
@@ -89,6 +101,7 @@ class PostgresMemoryStore:
                 )
             """)
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def remember(
         self,
         key: str,
@@ -96,6 +109,7 @@ class PostgresMemoryStore:
         category: str | None = None,
         source_conversation_id: UUID | None = None,
     ) -> PersonalMemory:
+        """保存或更新一条记忆。"""
         key = normalize_key(key)
         content = content.strip()
         if not content:
@@ -119,7 +133,9 @@ class PostgresMemoryStore:
             ).fetchone()
         return _memory(row)
 
+    # 调用位置：memory/memory_curator.py 的记忆整理流程调用。
     def get(self, key: str) -> PersonalMemory | None:
+        """按记忆键读取当前用户的个人记忆。"""
         with self._transaction() as conn:
             row = conn.execute(
                 f"SELECT {_COLUMNS} FROM personal_memories WHERE memory_key = %s AND user_id = %s",
@@ -127,7 +143,9 @@ class PostgresMemoryStore:
             ).fetchone()
         return _memory(row) if row else None
 
+    # 调用位置：PostgresMemoryStore 内的 search_memories 调用。
     def list_memories(self, limit: int = 20) -> tuple[PersonalMemory, ...]:
+        """列出当前用户的记忆。"""
         if not 1 <= limit <= 20:
             raise ValueError("Memory recall limit must be between 1 and 20")
         with self._transaction() as conn:
@@ -137,7 +155,9 @@ class PostgresMemoryStore:
             ).fetchall()
         return tuple(_memory(row) for row in rows)
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def forget(self, key: str) -> bool:
+        """删除指定记忆。"""
         with self._transaction() as conn:
             row = conn.execute(
                 "DELETE FROM personal_memories WHERE memory_key = %s AND user_id = %s RETURNING id",
@@ -145,8 +165,9 @@ class PostgresMemoryStore:
             ).fetchone()
         return row is not None
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def search_memories(self, query: str, limit: int = 20) -> tuple[PersonalMemory, ...]:
-        """Bounded lexical lookup; fall back to recent memories when no tokens match."""
+        """限制词项检索的结果数量；没有匹配词时返回近期记忆。"""
         if not 1 <= limit <= 20:
             raise ValueError("Memory recall limit must be between 1 and 20")
         stop_words = {
@@ -174,10 +195,11 @@ class PostgresMemoryStore:
             ).fetchall()
         return tuple(_memory(row) for row in rows) if rows else self.list_memories(limit)
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def apply_changes(
         self, changes: tuple[MemoryChange, ...], source_conversation_id: UUID
     ) -> None:
-        """Apply one validated curator plan atomically."""
+        """在单个事务中原子地应用已校验的记忆整理计划。"""
         if len(changes) > 3:
             raise ValueError("Too many memory changes")
         prepared: list[MemoryChange] = []
@@ -216,7 +238,9 @@ class PostgresMemoryStore:
                         (change.key, owner_id()),
                     )
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def remember_global(self, key: str, content: str) -> GlobalMemory:
+        """保存所有用户可见的全局记忆。"""
         require_admin()
         key = normalize_key(key)
         content = content.strip()
@@ -231,7 +255,9 @@ class PostgresMemoryStore:
             """, (key, content)).fetchone()
         return GlobalMemory(*row)
 
+    # 调用位置：通过 PostgresMemoryStore 实例在会话服务、记忆工具与整理服务中调用。
     def list_global_memories(self, limit: int = 20) -> tuple[GlobalMemory, ...]:
+        """列出全局记忆。"""
         require_admin()
         if not 1 <= limit <= 20:
             raise ValueError("Global memory limit must be between 1 and 20")

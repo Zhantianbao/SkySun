@@ -1,4 +1,5 @@
 """Real database and WebSocket checks for the desktop companion boundary."""
+# 本文件负责测试用例中的 test、devices 相关流程。
 
 import os
 from uuid import UUID, uuid4
@@ -14,13 +15,18 @@ from skysun.device.devices import PostgresDeviceStore
 from skysun.user.postgres_users import PostgresUserStore
 
 
+# 以下集中定义 StubAgent：Agent 执行层相关的数据和操作。
 class StubAgent:
+    # 调用位置：StubAgent 的调用方通过该方法使用。
     def reply(self, message, history=(), conversation_id=None):
+        """生成并返回本次对话的最终回复。"""
         return "ok"
 
 
+# 调用位置：pytest 在依赖此 fixture 的测试中调用。
 @pytest.fixture
 def platform(create_account):
+    """为测试提供 platform 所需的输入或模拟行为。"""
     url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -41,11 +47,15 @@ def platform(create_account):
                          ([alice.user_id, bob.user_id],))
 
 
+# 调用位置：tests/test_devices.py 的 test_device_registration_and_owner_isolation、tests/test_devices.py 的 test_websocket_heartbeat_authentication_and_offline_state、tests/test_devices.py 的 test_invalid_websocket_message_closes_safely 等处调用。
 def _auth(token):
+    """为测试准备 _auth 所需的替身或输入。"""
     return {"Authorization": "Bearer " + token}
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_device_registration_and_owner_isolation(platform):
+    """验证设备注册与所有者隔离。"""
     client, store, alice, alice_token, _, bob_token = platform
     payload = {"name": "My Computer", "hostname": "laptop", "operating_system": "Linux"}
     assert client.post("/api/devices", json=payload).status_code == 401
@@ -65,7 +75,9 @@ def test_device_registration_and_owner_isolation(platform):
     assert store.authenticate(device_id, device_token) is None
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_websocket_heartbeat_authentication_and_offline_state(platform):
+    """验证WebSocket心跳身份验证与离线状态。"""
     client, _, _, alice_token, _, bob_token = platform
     response = client.post("/api/devices", json={"name": "Laptop", "hostname": "host",
                                                  "operating_system": "Linux"}, headers=_auth(alice_token))
@@ -87,7 +99,9 @@ def test_websocket_heartbeat_authentication_and_offline_state(platform):
     assert client.get("/api/devices", headers=_auth(alice_token)).json()[0]["online"] is False
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_invalid_websocket_message_closes_safely(platform):
+    """验证无效 WebSocket 消息触发安全关闭。"""
     client, _, _, alice_token, _, _ = platform
     response = client.post("/api/devices", json={"name": "Laptop", "hostname": "host",
                                                  "operating_system": "Linux"}, headers=_auth(alice_token))

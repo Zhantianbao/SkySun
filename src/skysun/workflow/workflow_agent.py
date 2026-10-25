@@ -1,4 +1,5 @@
 """Optional multi-step path around the existing direct Agent."""
+# 本文件负责任务工作流中的 workflow、agent 相关流程。
 
 import logging
 from dataclasses import dataclass
@@ -17,10 +18,12 @@ from skysun.workflow.workflow import StepOutcome, StepRecord, StepState, Workflo
 logger = logging.getLogger(__name__)
 
 
+# 以下集中定义 ApprovalPending：数据结构或组件相关的数据和操作。
 class ApprovalPending(Exception):
     """Execution paused for a future human approval interface."""
 
 
+# 以下集中定义 WorkflowExecution：数据结构或组件相关的数据和操作。
 @dataclass(frozen=True)
 class WorkflowExecution:
     plan: TaskPlan
@@ -29,7 +32,9 @@ class WorkflowExecution:
     answer: str
 
 
+# 以下集中定义 WorkflowAgent：Agent 执行层相关的数据和操作。
 class WorkflowAgent:
+    # 调用位置：创建 WorkflowAgent 实例时调用。
     def __init__(
         self, direct_agent: LangChainAgent, planner: TaskPlanner,
         capabilities: tuple[str, ...],
@@ -38,6 +43,7 @@ class WorkflowAgent:
         observability: ObservabilityStore | None = None,
         response_evaluator: ResponseEvaluator | None = None,
     ) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._direct_agent = direct_agent
         self._planner = planner
         self._capabilities = capabilities
@@ -50,10 +56,13 @@ class WorkflowAgent:
         self._observability = observability
         self._response_evaluator = response_evaluator or ResponseEvaluator()
 
+    # 调用位置：ConversationService.chat 通过 Agent 接口调用。
     def reply(
         self, message: str, history: Sequence[ConversationMessage] = (),
         conversation_id: str | None = None,
     ) -> str:
+        """生成并返回本次对话的最终回复。"""
+        # 简单请求走直接 Agent；复杂请求创建计划，并统一处理审批和计划失败。
         if not needs_planning(message):
             if self._observability and self._task_store:
                 return self._reply_direct_observed(message, history, conversation_id)
@@ -66,11 +75,14 @@ class WorkflowAgent:
             logger.warning("Workflow setup failed: %s", type(error).__name__)
             return "I couldn't create a safe plan for that task right now."
 
+    # 调用位置：WorkflowAgent 内的 reply 调用。
     def _reply_direct_observed(
         self, message: str, history: Sequence[ConversationMessage],
         conversation_id: str | None,
     ) -> str:
+        """执行无需规划的请求并记录任务、轨迹和评估。"""
         assert self._task_store is not None and self._observability is not None
+        # 直接执行仍创建任务和轨迹，便于页面展示进度及后续评估。
         task = self._task_store.create(
             message, UUID(conversation_id) if conversation_id else None, tuple(history)
         )
@@ -108,11 +120,12 @@ class WorkflowAgent:
                                                   "Agent response unavailable.")
                     raise
 
+    # 调用位置：WorkflowAgent 内的 reply 调用。
     def execute_workflow(
         self, message: str, history: Sequence[ConversationMessage] = (),
         conversation_id: str | None = None,
     ) -> WorkflowExecution:
-        """Return execution metadata without changing the public chat response."""
+        """规划并执行多步骤任务，同时返回执行、验证和最终回答的信息。"""
         task = None
         if self._task_store:
             task = self._task_store.create(
@@ -130,10 +143,13 @@ class WorkflowAgent:
                     return result
         return self._plan_and_execute(message, history, conversation_id, task)
 
+    # 调用位置：WorkflowAgent 内的 execute_workflow 调用。
     def _plan_and_execute(
         self, message: str, history: Sequence[ConversationMessage],
         conversation_id: str | None, task: TaskSnapshot | None,
     ) -> WorkflowExecution:
+        """生成计划、保存任务状态并进入执行阶段。"""
+        # 先生成计划并核对能力边界，成功后才进入逐步执行。
         try:
             with span("planning"):
                 plan = self._planner.plan(message, self._capabilities)
@@ -150,12 +166,17 @@ class WorkflowAgent:
             raise
         return self._execute_plan(plan, message, history, conversation_id, task)
 
+    # 调用位置：WorkflowAgent 内的 _plan_and_execute、resume_task 调用。
     def _execute_plan(
         self, plan: TaskPlan, message: str, history: Sequence[ConversationMessage],
         conversation_id: str | None, task: TaskSnapshot | None,
     ) -> WorkflowExecution:
 
+        """执行计划步骤、验证证据并生成回复。"""
+        # 每一步只接收原目标、当前步骤和已完成结果，避免把后续步骤混入当前调用。
+        # 调用位置：工作流执行器通过 _run_workflow 接收并调用此回调。
         def run_step(step: PlanStep, previous: tuple[StepRecord, ...]) -> StepOutcome:
+            """执行当前工作流步骤并收集工具结果。"""
             with span("workflow_step", {"step_id": step.step_id}) as step_span:
                 completed = "\n".join(
                     f"{item.step_id}: {item.output[:3000]}"
@@ -179,6 +200,7 @@ class WorkflowAgent:
                     execution.grounding_status, execution.sources,
                 )
 
+        # 执行所有步骤后集中验证证据，再决定最终回复与持久化状态。
         with span("workflow_execution") as workflow_span:
             run = self._run_workflow(plan, run_step, task)
             workflow_span.status = "FAILED" if run.status.value == "FAILED" else "SUCCESS"
@@ -232,19 +254,25 @@ class WorkflowAgent:
             trace_event("final_response", "FAILED" if status is TaskStatus.FAILED else "SUCCESS")
         return WorkflowExecution(plan, run, verification, answer)
 
+    # 调用位置：WorkflowAgent 内的 _execute_plan 调用。
     def _run_workflow(self, plan, run_step, task):
+        """驱动工作流执行器并同步持久化状态。"""
         if task and self._task_store:
             completed = tuple(record for record in task.steps if record.state is StepState.SUCCESS)
             approved = {event.step_id for event in self._task_store.events(task.task_id)
                         if event.event_type == "approval_granted"}
 
+            # 调用位置：工作流执行器在开始步骤前调用此回调。
             def before_step(step: PlanStep) -> None:
+                """在执行步骤前确认任务状态。"""
                 if self._approval_required(step) and step.step_id not in approved:
                     self._task_store.transition(task.task_id, TaskStatus.WAITING_APPROVAL,
                                                 "approval_requested", step.step_id)
                     raise ApprovalPending()
 
+            # 调用位置：工作流执行器在步骤状态变化时调用此回调。
             def on_event(event):
+                """将工作流事件写入任务记录。"""
                 if event.state is StepState.RUNNING:
                     self._task_store.start_step(task.task_id, event.step_id)
 
@@ -255,8 +283,9 @@ class WorkflowAgent:
             )
         return self._executor.execute(plan, run_step)
 
+    # 调用位置：WorkflowAgent 内的 approve_task、recover_unfinished 调用。
     def resume_task(self, task_id: UUID) -> WorkflowExecution | None:
-        """Resume a stored plan without repeating successful steps."""
+        """从已保存的计划恢复任务，跳过先前已经成功的步骤。"""
         if not self._task_store:
             raise RuntimeError("Persistent task store is not configured")
         task = self._task_store.get(task_id)
@@ -292,7 +321,9 @@ class WorkflowAgent:
                                   str(task.conversation_id) if task.conversation_id else None,
                                   current)
 
+    # 调用位置：通过 WorkflowAgent 实例在工作流 Agent 与任务接口中调用。
     def approve_task(self, task_id: UUID) -> WorkflowExecution:
+        """批准等待人工确认的任务继续运行。"""
         if not self._task_store:
             raise RuntimeError("Persistent task store is not configured")
         task = self._task_store.get(task_id)
@@ -306,7 +337,9 @@ class WorkflowAgent:
         assert result is not None
         return result
 
+    # 调用位置：通过 WorkflowAgent 实例在工作流 Agent 与任务接口中调用。
     def recover_unfinished(self) -> None:
+        """启动时处理上次中断的任务。"""
         if not self._task_store:
             return
         with system_scope():

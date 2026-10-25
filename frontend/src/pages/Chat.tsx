@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Chat 相关逻辑。
 import { FormEvent, useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
@@ -21,7 +22,9 @@ import type {
   TaskActivity,
 } from "../types";
 
+// 调用位置：App 中 /chat 路由调用。
 export function Chat() {
+  /** 管理会话列表、消息、发送状态和任务活动。 */
   const { token, user } = useAuth();
   const storageKey = `skysun_conversation_${user?.user_id}`;
   const [conversationId, setConversationId] = useState<string | null>(() =>
@@ -39,7 +42,9 @@ export function Chat() {
   const [activity, setActivity] = useState<TaskActivity[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // 调用位置：Chat 初次加载及发送消息后调用。
   async function refreshConversations() {
+    /** 从接口更新侧边栏的会话列表。 */
     if (!token) return;
     try {
       const rows = await api<ConversationSummary[]>("/conversations", token);
@@ -49,6 +54,7 @@ export function Chat() {
     }
   }
 
+  // 进入聊天页后同步会话列表与当前会话历史；卸载时停止写入过期请求结果。
   useEffect(() => {
     void refreshConversations();
     if (!conversationId || !token) return;
@@ -74,11 +80,14 @@ export function Chat() {
     };
   }, []);
 
+  // 消息或发送状态变化后，将视图滚动到最新内容。
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
+  // 调用位置：Chat 的新建会话按钮调用。
   function newConversation() {
+    /** 清除当前会话状态并准备新对话。 */
     if (busy) return;
     setConversationId(null);
     localStorage.removeItem(storageKey);
@@ -90,7 +99,9 @@ export function Chat() {
     setShowConversations(false);
   }
 
+  // 调用位置：Chat 的会话列表项点击时调用。
   async function switchConversation(id: string) {
+    /** 加载所选会话的消息并切换本地状态。 */
     if (busy || id === conversationId || !token) return;
     setLoading(true);
     setError("");
@@ -110,7 +121,9 @@ export function Chat() {
     }
   }
 
+  // 调用位置：Chat 的消息表单提交时调用。
   async function send(event: FormEvent) {
+    /** 发送消息、显示回复并同步任务活动。 */
     event.preventDefault();
     const message = draft.trim();
     if (!message || busy || !token) return;
@@ -124,7 +137,9 @@ export function Chat() {
     setActivity([]);
     setBusy(true);
 
+    // 调用位置：Chat.send 启动的定时器调用。
     async function pollActivity() {
+      /** 查询当前聊天对应任务的最新执行活动。 */
       if (!active || polling || !token) return;
       polling = true;
       try {
@@ -153,6 +168,7 @@ export function Chat() {
       }
     }
 
+    // 发起聊天请求期间定时读取任务进度，回复返回后再结束轮询。
     const timer = window.setInterval(() => void pollActivity(), 1200);
     try {
       const result = await api<ChatResponse>("/chat", token, {

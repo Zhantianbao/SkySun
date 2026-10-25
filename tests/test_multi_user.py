@@ -1,4 +1,5 @@
 """Multi-user ownership and authorization against the dedicated test database."""
+# 本文件负责测试用例中的 test、multi、user 相关流程。
 
 import os
 import secrets
@@ -26,8 +27,10 @@ from skysun.workflow.workflow import StepRecord, StepState
 from skysun.workflow.workflow_agent import WorkflowAgent
 
 
+# 调用位置：pytest 在依赖此 fixture 的测试中调用。
 @pytest.fixture
 def platform(create_account):
+    """为测试提供 platform 所需的输入或模拟行为。"""
     url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -61,11 +64,15 @@ def platform(create_account):
             conn.execute("DELETE FROM skysun_users WHERE user_id = ANY(%s)", (list(ids),))
 
 
+# 调用位置：tests/test_multi_user.py 的 test_identity_authentication_and_conversation_isolation、tests/test_multi_user.py 的 test_legacy_rows_keep_their_dedicated_owner、tests/test_multi_user.py 的 test_personal_memory_same_key_isolated_and_global_memory_separate 等处调用。
 def _scope(user):
+    """为测试准备 _scope 所需的替身或输入。"""
     return actor_scope(Actor(user.user_id, user.role))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_old_admin_name_is_migrated_without_changing_identity_or_token(platform):
+    """验证旧管理员姓名迁移后保留固定身份和原令牌。"""
     users, *_ = platform
     with psycopg.connect(users._database_url) as conn:
         conn.execute("""
@@ -89,13 +96,18 @@ def test_old_admin_name_is_migrated_without_changing_identity_or_token(platform)
         assert conn.execute("SELECT username FROM skysun_users").fetchone()[0] == "管理员"
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 @pytest.mark.parametrize("token_length", [8, 513])
 def test_creation_api_requires_token_and_rejects_empty_or_duplicate_credentials(platform, new_username, token_length):
+    """验证创建用户接口要求令牌，并拒绝空值或重复凭据。"""
     users, conversations, _, tasks, _, accounts = platform
     (admin, admin_token), (alice, alice_token), _ = accounts
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：Agent 的调用方通过该方法使用。
         def reply(self, message, history=(), conversation_id=None):
+            """生成并返回本次对话的最终回复。"""
             return "Hello"
 
     client = TestClient(build_api(ConversationService(Agent(), conversations), users=users, tasks=tasks))
@@ -121,7 +133,9 @@ def test_creation_api_requires_token_and_rejects_empty_or_duplicate_credentials(
             conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (created_id,))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_admin_bootstrap_stores_only_token_hash(platform):
+    """验证管理员初始化只保存令牌哈希。"""
     users, _, _, _, _, _ = platform
     with psycopg.connect(users._database_url) as conn:
         original = conn.execute("SELECT token_hash FROM skysun_users WHERE user_id = %s",
@@ -141,12 +155,17 @@ def test_admin_bootstrap_stores_only_token_hash(platform):
                          (original, LEGACY_USER_ID))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_login_checks_both_credentials_on_the_server(platform):
+    """验证登录时由服务端同时核对姓名和令牌。"""
     users, conversations, _, tasks, _, accounts = platform
     (admin, token), (alice, alice_token), _ = accounts
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：Agent 的调用方通过该方法使用。
         def reply(self, message, history=(), conversation_id=None):
+            """生成并返回本次对话的最终回复。"""
             return "Hello"
 
     client = TestClient(build_api(ConversationService(Agent(), conversations), users=users, tasks=tasks))
@@ -161,7 +180,9 @@ def test_login_checks_both_credentials_on_the_server(platform):
     assert client.post("/api/login", json={"username": admin.username}).status_code == 422
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_bootstrap_restores_builtin_admin_and_rotates_password(platform):
+    """验证初始化可恢复内置管理员并轮换密码。"""
     users, *_ = platform
     with psycopg.connect(users._database_url) as conn:
         original = conn.execute("SELECT username, role, token_hash FROM skysun_users WHERE user_id = %s", (LEGACY_USER_ID,)).fetchone()
@@ -181,7 +202,9 @@ def test_bootstrap_restores_builtin_admin_and_rotates_password(platform):
             conn.execute("UPDATE skysun_users SET username = %s, role = %s, token_hash = %s WHERE user_id = %s", (*original, LEGACY_USER_ID))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_identity_authentication_and_conversation_isolation(platform):
+    """验证身份验证正确且用户会话相互隔离。"""
     users, conversations, _, _, _, accounts = platform
     _, (alice, alice_token), (bob, bob_token) = accounts
     assert users.authenticate(alice_token).user_id == alice.user_id
@@ -198,7 +221,9 @@ def test_identity_authentication_and_conversation_isolation(platform):
             conversations.append_exchange(conversation_id, "intrusion", "no")
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_legacy_rows_keep_their_dedicated_owner(platform):
+    """验证历史记录继续归属于固定的原所有者。"""
     _, conversations, memory, _, _, accounts = platform
     _, (alice, _), _ = accounts
     legacy_conversation = conversations.create()
@@ -216,7 +241,9 @@ def test_legacy_rows_keep_their_dedicated_owner(platform):
             conn.execute("DELETE FROM conversations WHERE id = %s", (UUID(legacy_conversation),))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_personal_memory_same_key_isolated_and_global_memory_separate(platform):
+    """验证相同键名的个人记忆按用户隔离，全局记忆独立保存。"""
     _, _, memory, _, _, accounts = platform
     (admin, _), (alice, _), (bob, _) = accounts
     with _scope(alice):
@@ -240,13 +267,18 @@ def test_personal_memory_same_key_isolated_and_global_memory_separate(platform):
             conn.execute("DELETE FROM global_memories WHERE memory_key = %s", (key,))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_curator_deduplicates_within_each_user(platform):
+    """验证记忆整理在各用户范围内分别去重。"""
     _, _, memory, _, _, accounts = platform
     _, (alice, _), (bob, _) = accounts
     key = "theme_" + uuid4().hex[:10]
 
+    # 以下集中定义 Curator：数据结构或组件相关的数据和操作。
     class Curator:
+        # 调用位置：src/skysun/memory/memory_curator.py 的 MemoryCurationService.process、tests/test_memory_curator.py 的 test_langchain_curator_uses_typed_json_output_without_network、tests/test_memory_extraction.py 的 test_valid_structured_output_is_accepted_without_retry 等处调用。
         def decide(self, context):
+            """根据对话和已有记忆决定新增、更新或删除内容。"""
             return MemoryPlan(decisions=[MemoryDecision(action="upsert", key=key,
                               content="Prefers dark mode", importance="high")])
 
@@ -261,7 +293,9 @@ def test_curator_deduplicates_within_each_user(platform):
         assert memory.get(key).id != first.id
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_private_knowledge_isolation_and_global_visibility(platform):
+    """验证私有知识按用户隔离，全局知识仍可见。"""
     _, _, _, _, knowledge, accounts = platform
     _, (alice, _), (bob, _) = accounts
     vector = (1.0,) + (0.0,) * 1023
@@ -290,7 +324,9 @@ def test_private_knowledge_isolation_and_global_visibility(platform):
         knowledge.delete_document(global_path)
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_task_ownership_events_and_resume(platform):
+    """验证任务事件遵守所有权规则，且中断后能够恢复。"""
     _, _, _, tasks, _, accounts = platform
     _, (alice, _), (bob, _) = accounts
     with _scope(alice):
@@ -318,12 +354,18 @@ def test_task_ownership_events_and_resume(platform):
 
     from skysun.core.langchain_agent import AgentExecution
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：tests/test_multi_user.py 的 platform、tests/test_multi_user.py 的 test_old_admin_name_is_migrated_without_changing_identity_or_token、tests/test_multi_user.py 的 test_creation_api_requires_token_and_rejects_empty_or_duplicate_credentials 等处调用。
         def execute(self, message, history=(), conversation_id=None, knowledge_question=None):
+            """执行 Agent 或工作流并返回结构化结果。"""
             return AgentExecution("Explained.", (), (), None, ())
 
+    # 以下集中定义 Planner：计划生成层相关的数据和操作。
     class Planner:
+        # 调用位置：Planner 的调用方通过该方法使用。
         def plan(self, goal, capabilities):
+            """根据用户目标生成可执行的步骤计划。"""
             raise AssertionError("Resume must use persisted plan")
 
     workflow = WorkflowAgent(Agent(), Planner(), ("count_words", "reason"), tasks)
@@ -335,12 +377,17 @@ def test_task_ownership_events_and_resume(platform):
         assert saved.steps[1].output == "Explained."
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_api_bearer_roles_and_cross_user_rejection(platform, new_username):
+    """验证接口检查 Bearer 身份和角色，并拒绝跨用户访问。"""
     users, conversations, _, tasks, _, accounts = platform
     (admin, admin_token), (alice, alice_token), (bob, bob_token) = accounts
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：Agent 的调用方通过该方法使用。
         def reply(self, message, history=(), conversation_id=None):
+            """生成并返回本次对话的最终回复。"""
             return "Hello"
 
     app = build_api(ConversationService(Agent(), conversations), users=users, tasks=tasks)
@@ -377,7 +424,9 @@ def test_api_bearer_roles_and_cross_user_rejection(platform, new_username):
         conn.execute("DELETE FROM skysun_users WHERE user_id = %s", (new_id,))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_web_read_endpoints_keep_user_data_isolated(platform):
+    """验证网页读取接口保持用户数据隔离。"""
     users, conversations, memory, tasks, knowledge, accounts = platform
     _, (alice, alice_token), (bob, bob_token) = accounts
     path = "/test/" + uuid4().hex + "/alice.md"
@@ -389,8 +438,11 @@ def test_web_read_endpoints_keep_user_data_isolated(platform):
         knowledge.save_document(path, "alice.md", "hash-web",
                                 (KnowledgeChunkInput("Alice document", (1.0,) + (0.0,) * 1023),))
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：Agent 的调用方通过该方法使用。
         def reply(self, message, history=(), conversation_id=None):
+            """生成并返回本次对话的最终回复。"""
             return "Hello"
 
     client = TestClient(build_api(ConversationService(Agent(), conversations), users=users,
@@ -416,20 +468,28 @@ def test_web_read_endpoints_keep_user_data_isolated(platform):
                for row in client.get("/api/conversations", headers=bh).json())
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_web_upload_and_task_activity_respect_ownership(platform):
+    """验证网页上传和任务活动都遵守数据所有权。"""
     users, conversations, _, tasks, knowledge, accounts = platform
     _, (alice, alice_token), (bob, bob_token) = accounts
     observability = PostgresObservabilityStore(users._database_url)
     observability.initialize_schema()
 
+    # 以下集中定义 Embeddings：数据结构或组件相关的数据和操作。
     class Embeddings:
         dimension = 1024
 
+        # 调用位置：src/skysun/rag/knowledge_ingestion.py 的 KnowledgeIngestionService.ingest_text、tests/test_knowledge.py 的 test_qwen_adapter_uses_compatible_api_and_validates_vectors 调用。
         def embed_passages(self, texts):
+            """把多个知识片段转换为向量。"""
             return ((1.0,) + (0.0,) * 1023,) * len(texts)
 
+    # 以下集中定义 Agent：Agent 执行层相关的数据和操作。
     class Agent:
+        # 调用位置：Agent 的调用方通过该方法使用。
         def reply(self, message, history=(), conversation_id=None):
+            """生成并返回本次对话的最终回复。"""
             return "Hello"
 
     client = TestClient(build_api(ConversationService(Agent(), conversations), users=users,

@@ -1,3 +1,4 @@
+// 本文件负责前端测试中的 app.test 相关逻辑。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -24,7 +25,9 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("web application", () => {
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("validates username and token before entering protected chat", async () => {
+    /** 验证姓名和令牌都有效后才进入受保护的聊天页。 */
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue({ ok: true, json: async () => identity } as Response);
@@ -47,7 +50,9 @@ describe("web application", () => {
     expect(sessionStorage.getItem("skysun_token")).toBe("test-token");
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("rejects a token for a different username", async () => {
+    /** 验证令牌对应的姓名不一致时拒绝登录。 */
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => identity,
@@ -64,7 +69,9 @@ describe("web application", () => {
     expect(sessionStorage.getItem("skysun_token")).toBeNull();
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("logs the built-in administrator into a workspace with admin access", async () => {
+    /** 验证内置管理员可进入带管理入口的工作台。 */
     const admin = { ...identity, username: "詹天宝", role: "ADMIN" };
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
@@ -79,7 +86,9 @@ describe("web application", () => {
     expect(JSON.parse(sessionStorage.getItem("skysun_user") || "null")).toEqual(admin);
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("ignores a cached administrator identity when no credential is present", async () => {
+    /** 验证没有令牌时不会信任缓存的管理员身份。 */
     sessionStorage.setItem("skysun_user", JSON.stringify({ ...identity, role: "ADMIN" }));
     window.history.replaceState({}, "", "/admin");
     render(<App />);
@@ -87,7 +96,9 @@ describe("web application", () => {
     expect(window.location.pathname).toBe("/login");
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("shows an authentication error for an invalid login token", async () => {
+    /** 验证错误令牌会显示身份验证失败信息。 */
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 401,
@@ -107,7 +118,9 @@ describe("web application", () => {
     expect(sessionStorage.getItem("skysun_token")).toBeNull();
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("redirects a normal user away from admin", async () => {
+    /** 验证普通用户不能进入管理员页面。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/admin");
@@ -120,7 +133,9 @@ describe("web application", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/chat"));
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("clears auth on an unauthorized API response", async () => {
+    /** 验证接口返回 401 后清除浏览器身份。 */
     sessionStorage.setItem("skysun_token", "expired");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/memory");
@@ -134,7 +149,9 @@ describe("web application", () => {
     expect(sessionStorage.getItem("skysun_token")).toBeNull();
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("separates source metadata from answer markdown", () => {
+    /** 验证回答正文与来源元数据分开展示。 */
     expect(
       splitSources("Answer\n\nSources:\n- guide.md (/docs/guide.md), chunk 0"),
     ).toEqual({
@@ -143,7 +160,9 @@ describe("web application", () => {
     });
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("restores a completed conversation and renders its cited source", async () => {
+    /** 验证恢复历史会话时显示原消息及引用来源。 */
     const conversationId = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
@@ -182,7 +201,9 @@ describe("web application", () => {
     );
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("sends a chat turn and shows its persisted task status", async () => {
+    /** 验证发送消息后呈现持久化任务的状态。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/chat");
@@ -213,7 +234,9 @@ describe("web application", () => {
     expect(screen.getByText("COMPLETED")).toBeInTheDocument();
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("switches between stored conversations", async () => {
+    /** 验证用户可以切换已保存的会话。 */
     const first = "11111111-1111-1111-1111-111111111111";
     const second = "22222222-2222-2222-2222-222222222222";
     sessionStorage.setItem("skysun_token", "test-token");
@@ -240,7 +263,9 @@ describe("web application", () => {
     expect(localStorage.getItem(`skysun_conversation_${identity.user_id}`)).toBe(second);
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("uploads a document as multipart form data", async () => {
+    /** 验证文档上传采用 multipart 表单。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/knowledge");
@@ -265,7 +290,9 @@ describe("web application", () => {
     expect(uploadCall?.[1]?.headers).not.toHaveProperty("Content-Type");
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("shows the current user's desktop companion status", async () => {
+    /** 验证页面显示当前用户的桌面伴随程序状态。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/devices");
@@ -284,7 +311,9 @@ describe("web application", () => {
     expect(screen.getByText("35%")).toBeInTheDocument();
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("requests a screenshot and queues a desktop reminder", async () => {
+    /** 验证截图请求和桌面便笺都进入设备动作队列。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/devices");
@@ -313,7 +342,9 @@ describe("web application", () => {
       expect.objectContaining({ body: JSON.stringify({ content: "Review this" }) }));
   });
 
+  // 调用位置：Vitest 执行本条前端交互测试时调用。
   it("shows owner screenshot request status", async () => {
+    /** 验证截图页只显示当前所有者的请求状态。 */
     sessionStorage.setItem("skysun_token", "test-token");
     sessionStorage.setItem("skysun_user", JSON.stringify(identity));
     window.history.replaceState({}, "", "/screenshots");

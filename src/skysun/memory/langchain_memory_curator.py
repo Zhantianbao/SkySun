@@ -1,4 +1,5 @@
 """LangChain/DeepSeek adapter for SkySun's structured Memory Curator."""
+# 本文件负责会话与记忆中的 langchain、memory、curator 相关流程。
 
 import json
 import logging
@@ -36,8 +37,9 @@ _REPAIR_SUFFIX = (
 _WRAPPER_KEYS = frozenset({"memory_plan", "plan", "result", "output", "data"})
 
 
+# 调用位置：src/skysun/memory/langchain_memory_curator.py 的 _as_plan 调用。
 def _decode_json(text: str) -> object | None:
-    """Extract one JSON value from plain, fenced, or briefly prefaced output."""
+    """从纯文本、代码围栏或带简短前缀的模型输出中提取结构化数据。"""
     if len(text) > 32768:
         return None
     decoder = json.JSONDecoder()
@@ -54,8 +56,9 @@ def _decode_json(text: str) -> object | None:
     return None
 
 
+# 调用位置：src/skysun/memory/langchain_memory_curator.py 的 _parse_result 调用。
 def _as_plan(value: object) -> MemoryPlan | None:
-    """Accept a small set of wrappers, then apply the full memory policy."""
+    """解析允许的模型输出包装形式，再按完整记忆规则生成整理计划。"""
     if isinstance(value, MemoryPlan):
         try:
             validate_plan(value)
@@ -86,7 +89,9 @@ def _as_plan(value: object) -> MemoryPlan | None:
     return None
 
 
+# 调用位置：src/skysun/memory/langchain_memory_curator.py 的 LangChainMemoryCurator.decide 调用。
 def _parse_result(result: object) -> MemoryPlan | None:
+    """解析并校验模型返回的结构化结果。"""
     if isinstance(result, dict) and {"raw", "parsed", "parsing_error"} <= result.keys():
         parsed = _as_plan(result["parsed"])
         if parsed is not None:
@@ -95,13 +100,18 @@ def _parse_result(result: object) -> MemoryPlan | None:
     return _as_plan(result)
 
 
+# 以下集中定义 LangChainMemoryCurator：数据结构或组件相关的数据和操作。
 class LangChainMemoryCurator:
+    # 调用位置：创建 LangChainMemoryCurator 实例时调用。
     def __init__(self, model: BaseChatModel) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._structured_model = model.with_structured_output(
             MemoryPlan, method="json_mode", include_raw=True
         )
 
+    # 调用位置：通过 LangChainMemoryCurator 实例在会话服务、记忆工具与整理服务中调用。
     def decide(self, context: CurationContext) -> MemoryPlan:
+        """根据对话和已有记忆决定新增、更新或删除内容。"""
         memories = [
             {"key": memory.key, "content": memory.content, "category": memory.category}
             for memory in context.current_memories

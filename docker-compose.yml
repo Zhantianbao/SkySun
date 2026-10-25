@@ -1,3 +1,4 @@
+# 数据库先完成健康检查，后端再启动；前端由 Nginx 提供静态资源和代理。
 services:
   postgres:
     image: pgvector/pgvector:0.8.6-pg16-bookworm

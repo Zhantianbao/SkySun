@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Knowledge 相关逻辑。
 import { ChangeEvent, FormEvent, useState } from "react";
 import {
   BookOpenText,
@@ -19,7 +20,9 @@ import { useResource } from "../hooks/useResource";
 import { useAuth } from "../stores/auth";
 import type { Document, UploadResult } from "../types";
 
+// 调用位置：App 中 /knowledge 路由调用。
 export function Knowledge() {
+  /** 展示知识文档并提供上传入口。 */
   const { token } = useAuth();
   const { data, loading, error, refresh } = useResource<Document[]>(
     "/knowledge/documents",
@@ -29,13 +32,17 @@ export function Knowledge() {
   const [uploadError, setUploadError] = useState("");
   const [uploaded, setUploaded] = useState<UploadResult | null>(null);
 
+  // 调用位置：Knowledge 文件输入框变化时调用。
   function selectFile(event: ChangeEvent<HTMLInputElement>) {
+    /** 记录用户选中的待上传文件。 */
     setFile(event.target.files?.[0] || null);
     setUploadError("");
     setUploaded(null);
   }
 
+  // 调用位置：Knowledge 上传表单提交时调用。
   async function upload(event: FormEvent) {
+    /** 将文件提交给知识入库接口并刷新列表。 */
     event.preventDefault();
     if (!file || !token || uploading) return;
     if (file.size > 2 * 1024 * 1024) {

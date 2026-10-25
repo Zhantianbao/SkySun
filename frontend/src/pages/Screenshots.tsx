@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Screenshots 相关逻辑。
 import { useEffect, useState } from "react";
 import { Camera, RefreshCw } from "lucide-react";
 import { apiBlob } from "../api/client";
@@ -6,18 +7,24 @@ import { useResource } from "../hooks/useResource";
 import { useAuth } from "../stores/auth";
 import type { Screenshot } from "../types";
 
+// 调用位置：App 中 /screenshots 路由调用。
 export function Screenshots() {
+  /** 加载并展示设备截图记录。 */
   const { token } = useAuth();
   const { data, loading, error, refresh } = useResource<Screenshot[]>("/screenshots");
   const [imageUrl, setImageUrl] = useState("");
   const [imageError, setImageError] = useState("");
+  // 定期刷新截图请求状态，页面离开时取消定时器。
   useEffect(() => {
     const timer = window.setInterval(() => void refresh(), 5000);
     return () => window.clearInterval(timer);
   }, [refresh]);
+  // 图片链接由浏览器临时创建，切换图片或离开页面时释放。
   useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
 
+  // 调用位置：Screenshots 的查看按钮调用。
   async function openImage(requestId: string) {
+    /** 下载并打开所选截图。 */
     if (!token) return;
     setImageError("");
     try {

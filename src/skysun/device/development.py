@@ -1,4 +1,5 @@
 """Bounded, owner-scoped screenshot and reminder requests for desktop companions."""
+# 本文件负责设备通信中的 development 相关流程。
 
 from uuid import UUID, uuid4
 
@@ -10,14 +11,21 @@ MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
+# 以下集中定义 PostgresDevelopmentStore：存储层相关的数据和操作。
 class PostgresDevelopmentStore:
+    # 调用位置：创建 PostgresDevelopmentStore 实例时调用。
     def __init__(self, database_url: str) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._database_url = database_url
 
+    # 调用位置：PostgresDevelopmentStore 的 initialize_schema 与数据库读写方法调用。
     def _connect(self) -> psycopg.Connection:
+        """建立数据库连接，并统一连接参数。"""
         return psycopg.connect(self._database_url, connect_timeout=5)
 
+    # 调用位置：core/main.py 的 create_app 初始化存储时调用；相关测试也会直接调用。
     def initialize_schema(self) -> None:
+        """创建或更新当前存储所需的数据表和索引。"""
         with self._connect() as conn:
             ensure_user_schema(conn)
             conn.execute("""
@@ -62,13 +70,17 @@ class PostgresDevelopmentStore:
                 )
             """)
 
+    # 调用位置：PostgresDevelopmentStore 内的 request_screenshot、create_note、list_notes 调用。
     @staticmethod
     def _owned(conn: psycopg.Connection, user_id: UUID, device_id: UUID) -> bool:
+        """检查设备数据是否属于当前用户。"""
         return conn.execute("""
             SELECT 1 FROM devices WHERE device_id = %s AND user_id = %s
         """, (device_id, user_id)).fetchone() is not None
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def request_screenshot(self, user_id: UUID, device_id: UUID) -> UUID:
+        """创建一次需要设备执行的截图动作。"""
         request_id = uuid4()
         with self._connect() as conn:
             if not self._owned(conn, user_id, device_id):
@@ -94,7 +106,9 @@ class PostgresDevelopmentStore:
             self._event(conn, device_id, user_id, "screenshot_requested", request_id)
         return request_id
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def list_screenshots(self, user_id: UUID, limit: int = 30) -> list[dict]:
+        """列出当前用户的截图。"""
         self.cleanup()
         with self._connect() as conn:
             rows = conn.execute("""
@@ -106,7 +120,9 @@ class PostgresDevelopmentStore:
                  "requested_at": r[3].isoformat(),
                  "uploaded_at": r[4].isoformat() if r[4] else None} for r in rows]
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def image(self, user_id: UUID, request_id: UUID) -> bytes:
+        """读取截图的内容和类型。"""
         with self._connect() as conn:
             row = conn.execute("""
                 SELECT image_data FROM device_screenshots
@@ -117,7 +133,9 @@ class PostgresDevelopmentStore:
             raise KeyError(request_id)
         return bytes(row[0])
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def upload_screenshot(self, device_id: UUID, request_id: UUID, image: bytes) -> None:
+        """保存设备提交的截图内容。"""
         if len(image) > MAX_SCREENSHOT_BYTES or not image.startswith(PNG_SIGNATURE):
             raise ValueError("Expected PNG screenshot up to 5 MiB")
         with self._connect() as conn:
@@ -130,7 +148,9 @@ class PostgresDevelopmentStore:
                 raise KeyError(request_id)
             self._event(conn, device_id, row[0], "screenshot_uploaded", request_id)
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def fail_screenshot(self, device_id: UUID, request_id: UUID) -> None:
+        """把截图请求标记为失败。"""
         with self._connect() as conn:
             row = conn.execute("""
                 UPDATE device_screenshots SET status = 'FAILED'
@@ -141,7 +161,9 @@ class PostgresDevelopmentStore:
                 raise KeyError(request_id)
             self._event(conn, device_id, row[0], "screenshot_failed", request_id)
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def create_note(self, user_id: UUID, device_id: UUID, content: str) -> UUID:
+        """创建发给设备的便笺。"""
         note_id = uuid4()
         with self._connect() as conn:
             if not self._owned(conn, user_id, device_id):
@@ -153,7 +175,9 @@ class PostgresDevelopmentStore:
             self._event(conn, device_id, user_id, "note_created", note_id)
         return note_id
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def list_notes(self, user_id: UUID, device_id: UUID, limit: int = 20) -> list[dict]:
+        """列出设备便笺。"""
         with self._connect() as conn:
             if not self._owned(conn, user_id, device_id):
                 raise KeyError(device_id)
@@ -166,7 +190,9 @@ class PostgresDevelopmentStore:
                  "created_at": r[3].isoformat(),
                  "delivered_at": r[4].isoformat() if r[4] else None} for r in rows]
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def deliver_note(self, device_id: UUID, note_id: UUID) -> None:
+        """标记便笺已送达。"""
         with self._connect() as conn:
             row = conn.execute("""
                 UPDATE device_notes SET status = 'DELIVERED', delivered_at = now()
@@ -177,7 +203,9 @@ class PostgresDevelopmentStore:
                 raise KeyError(note_id)
             self._event(conn, device_id, row[0], "note_delivered", note_id)
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def pending_actions(self, device_id: UUID) -> list[dict]:
+        """查找尚未下发给设备的动作。"""
         self.cleanup()
         with self._connect() as conn:
             captures = conn.execute("""
@@ -193,7 +221,9 @@ class PostgresDevelopmentStore:
         return ([{"type": "screenshot_request", "request_id": str(r[0])} for r in captures]
                 + [{"type": "note", "note_id": str(r[0]), "content": r[1]} for r in notes])
 
+    # 调用位置：通过 PostgresDevelopmentStore 实例在设备路由及桌面伴随程序中调用。
     def list_events(self, user_id: UUID, device_id: UUID, limit: int = 50) -> list[dict]:
+        """列出设备动作的审计事件。"""
         with self._connect() as conn:
             if not self._owned(conn, user_id, device_id):
                 raise KeyError(device_id)
@@ -205,7 +235,9 @@ class PostgresDevelopmentStore:
         return [{"event_type": r[0], "reference_id": str(r[1]) if r[1] else None,
                  "created_at": r[2].isoformat()} for r in rows]
 
+    # 调用位置：PostgresDevelopmentStore 内的 list_screenshots、pending_actions 调用。
     def cleanup(self) -> None:
+        """清理过期的截图和设备记录。"""
         with self._connect() as conn:
             conn.execute("""
                 UPDATE device_screenshots SET status = 'EXPIRED'
@@ -220,9 +252,11 @@ class PostgresDevelopmentStore:
                 WHERE created_at < now() - interval '30 days'
             """)
 
+    # 调用位置：PostgresDevelopmentStore 内的 request_screenshot、upload_screenshot、fail_screenshot 调用。
     @staticmethod
     def _event(conn: psycopg.Connection, device_id: UUID, user_id: UUID,
                event_type: str, reference_id: UUID) -> None:
+        """记录设备动作产生的审计事件。"""
         conn.execute("""
             INSERT INTO device_events (device_id, user_id, event_type, reference_id)
             VALUES (%s, %s, %s, %s)

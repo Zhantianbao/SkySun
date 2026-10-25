@@ -1,17 +1,22 @@
+// 本文件负责页面路由与交互中的 Login 相关逻辑。
 import { FormEvent, useState } from "react";
 import { ArrowRight, KeyRound } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../stores/auth";
 import { BrandLogo } from "../components/BrandLogo";
 
+// 调用位置：App 中 /login 路由调用。
 export function Login() {
+  /** 显示姓名和密码输入表单及登录反馈。 */
   const { user, login } = useAuth();
   const [username, setUsername] = useState("");
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   if (user) return <Navigate to="/chat" replace />;
+  // 调用位置：Login 表单提交时调用。
   async function submit(event: FormEvent) {
+    /** 读取姓名和密码并完成登录与页面跳转。 */
     event.preventDefault();
     setBusy(true);
     setError("");

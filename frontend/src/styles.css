@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap");
+/* 全局字体、颜色和盒模型为所有页面提供一致的基础样式。 */
 :root {
   font-family: "DM Sans", "Noto Sans SC", sans-serif;
   color: #202921;
@@ -29,6 +30,7 @@ a {
   display: flex;
   min-height: 100vh;
 }
+/* 工作台侧边栏：品牌、导航、用户身份和退出入口。 */
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
@@ -259,6 +261,7 @@ a {
 .empty-state .text-link {
   margin-top: 14px;
 }
+/* 任务、记忆、文档等列表复用卡片间距与状态样式。 */
 .card-list {
   display: grid;
   gap: 13px;
@@ -444,6 +447,7 @@ a {
 .document-end {
   color: #b1c3b2;
 }
+/* 聊天页布局：会话列表、消息流、输入区与执行活动。 */
 .chat-page {
   height: 100vh;
   display: flex;
@@ -701,6 +705,7 @@ a {
   font-size: 12px;
   font-weight: 700;
 }
+/* 管理页集中展示系统指标、轨迹与回答评估。 */
 .admin-section {
   margin-top: 30px;
 }
@@ -792,6 +797,7 @@ tr:last-child td {
 .mobile-nav {
   display: none;
 }
+/* 登录页的表单、品牌内容和视觉区域。 */
 .login-page {
   display: grid;
   grid-template-columns: minmax(430px, 52%) 1fr;
@@ -946,6 +952,7 @@ tr:last-child td {
   height: 100vh;
   color: #7f9b80;
 }
+/* 窄屏时压缩导航与多栏布局，保留主要操作入口。 */
 @media (max-width: 900px) {
   .sidebar {
     width: 200px;
@@ -1352,6 +1359,7 @@ tr:last-child td {
 }
 
 /* Desktop companion dashboard */
+/* 设备卡片、便笺操作和截图预览共用这一组终端管理样式。 */
 .device-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); }
 .device-card { background: #fff; border: 1px solid #e7ede6; border-radius: 17px; padding: 22px; }
 .device-heading { display: flex; align-items: center; gap: 12px; }

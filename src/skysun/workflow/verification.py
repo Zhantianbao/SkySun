@@ -1,4 +1,5 @@
 """Workflow result checks informed by tool outcomes and knowledge grounding."""
+# 本文件负责任务工作流中的 verification 相关流程。
 
 from dataclasses import dataclass
 from enum import Enum
@@ -8,12 +9,14 @@ from skysun.workflow.planner import TaskPlan
 from skysun.workflow.workflow import StepState, WorkflowRun, WorkflowStatus
 
 
+# 以下集中定义 VerificationStatus：数据结构或组件相关的数据和操作。
 class VerificationStatus(str, Enum):
     SUCCESS = "SUCCESS"
     NEEDS_REVIEW = "NEEDS_REVIEW"
     FAILED = "FAILED"
 
 
+# 以下集中定义 VerificationResult：数据结构或组件相关的数据和操作。
 @dataclass(frozen=True)
 class VerificationResult:
     status: VerificationStatus
@@ -22,8 +25,11 @@ class VerificationResult:
     next_action: str | None = None
 
 
+# 以下集中定义 WorkflowVerifier：结果校验层相关的数据和操作。
 class WorkflowVerifier:
+    # 调用位置：通过 WorkflowVerifier 实例在工作流 Agent 与任务接口中调用。
     def verify(self, plan: TaskPlan, run: WorkflowRun) -> VerificationResult:
+        """检查工作流结果和证据是否满足计划要求。"""
         if run.goal != plan.goal or len(run.steps) != len(plan.steps):
             return VerificationResult(VerificationStatus.FAILED, "Workflow result does not match its plan.")
         failed = tuple(

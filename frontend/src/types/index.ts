@@ -1,3 +1,4 @@
+// 此处集中定义前端与后端接口共享的用户、会话、任务、知识和设备数据形状。
 export type Role = "USER" | "ADMIN";
 export type User = { user_id: string; username: string; role: Role };
 export type ChatResponse = {

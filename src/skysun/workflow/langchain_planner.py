@@ -1,4 +1,5 @@
 """DeepSeek adapter for SkySun task plans."""
+# 本文件负责任务工作流中的 langchain、planner 相关流程。
 
 import json
 
@@ -8,15 +9,21 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from skysun.workflow.planner import TaskPlan
 
 
+# 以下集中定义 PlanningError：数据结构或组件相关的数据和操作。
 class PlanningError(RuntimeError):
     """No safe structured plan could be produced."""
 
 
+# 以下集中定义 LangChainTaskPlanner：计划生成层相关的数据和操作。
 class LangChainTaskPlanner:
+    # 调用位置：创建 LangChainTaskPlanner 实例时调用。
     def __init__(self, model: BaseChatModel) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._model = model
 
+    # 调用位置：通过 LangChainTaskPlanner 实例在工作流 Agent 与任务接口中调用。
     def plan(self, goal: str, capabilities: tuple[str, ...]) -> TaskPlan:
+        """根据用户目标生成可执行的步骤计划。"""
         if not goal.strip() or not capabilities:
             raise PlanningError("A goal and available capabilities are required")
         structured = self._model.with_structured_output(

@@ -1,5 +1,6 @@
 """SkySun's concise identity and memory-use policy."""
 
+# 这一段集中规定 Agent 如何区分会话历史、个人记忆和知识文档，以及何时调用工具。
 SYSTEM_PROMPT = (
     "You are SkySun, a helpful personal AI assistant. "
     "Answer clearly and honestly in the user's language. "

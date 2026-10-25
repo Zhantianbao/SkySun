@@ -1,4 +1,5 @@
 """Application composition root."""
+# 本文件负责核心服务中的 main 相关流程。
 
 import asyncio
 from contextlib import suppress
@@ -35,8 +36,11 @@ from skysun.user.postgres_users import PostgresUserStore
 from skysun.workflow.workflow_agent import WorkflowAgent
 
 
+# 以下集中定义 WebStaticFiles：数据结构或组件相关的数据和操作。
 class WebStaticFiles(StaticFiles):
+    # 调用位置：Starlette StaticFiles 处理静态资源请求时调用；create_app 挂载本类。
     async def get_response(self, path: str, scope):
+        """返回静态文件；前端页面路径缺失时回退到 index.html。"""
         try:
             response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
@@ -46,6 +50,7 @@ class WebStaticFiles(StaticFiles):
         return response
 
 
+# 调用位置：Dockerfile.backend 的 uvicorn --factory 启动入口调用；应用组装测试也直接调用。
 def create_app(
     store: ConversationStore | None = None,
     memory_store: MemoryStore | None = None,
@@ -53,7 +58,7 @@ def create_app(
     knowledge_store: KnowledgeStore | None = None,
     embeddings: EmbeddingProvider | None = None,
 ) -> FastAPI:
-    """Build the app; normal runtime initializes all PostgreSQL stores."""
+    """读取配置并初始化数据库存储，组装智能代理、会话服务和后端接口。"""
     settings = load_settings()
 
     #初始化数据库
@@ -84,6 +89,7 @@ def create_app(
     devices.initialize_schema()
     development = PostgresDevelopmentStore(database_url)
     development.initialize_schema()
+    # 持久化存储准备好后，组装直接 Agent、工作流、记忆整理和评估链。
     model = create_deepseek(settings)
     direct_agent = LangChainAgent(model, memory_store, knowledge_store, embeddings)
     agent = WorkflowAgent(
@@ -95,11 +101,15 @@ def create_app(
     )
     curator = curator or LangChainMemoryCurator(model)
     curation = MemoryCurationService(curator, memory_store)
+    # 调用位置：FastAPI 启动和关闭时调用。
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        """在应用启动时初始化存储，并在关闭时清理资源。"""
         agent.recover_unfinished()
         development.cleanup()
+        # 调用位置：src/skysun/core/main.py 的 create_app.lifespan 调用。
         async def prune_expired():
+            """定期清理过期的设备数据。"""
             while True:
                 await asyncio.sleep(3600)
                 await asyncio.to_thread(development.cleanup)
@@ -111,6 +121,7 @@ def create_app(
             with suppress(asyncio.CancelledError):
                 await cleanup_task
 
+    # 最后把会话服务和其他存储注入 HTTP 接口，并按需挂载前端构建产物。
     app = build_api(ConversationService(agent, store, curation), lifespan=lifespan,
                     users=usersStore, tasks=task_store, observability=observability,
                     memory=memory_store, knowledge=knowledge_store,

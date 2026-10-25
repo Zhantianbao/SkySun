@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Tasks 相关逻辑。
 import { Link } from "react-router-dom";
 import {
   ArrowUpRight,
@@ -17,7 +18,9 @@ import {
 import { useResource } from "../hooks/useResource";
 import type { Task } from "../types";
 
+// 调用位置：App 中 /tasks 路由调用。
 export function Tasks() {
+  /** 加载并展示用户任务与步骤状态。 */
   const { data, loading, error, refresh } = useResource<Task[]>("/tasks");
   return (
     <div className="page">

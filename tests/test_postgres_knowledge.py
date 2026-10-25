@@ -1,4 +1,5 @@
 """PostgreSQL/pgvector integration uses only the dedicated *_test database."""
+# 本文件负责测试用例中的 test、postgres、knowledge 相关流程。
 
 import os
 from collections.abc import Iterator
@@ -14,8 +15,10 @@ _A = (1.0,) + (0.0,) * 1023
 _B = (0.0, 1.0) + (0.0,) * 1022
 
 
+# 调用位置：pytest 在依赖此 fixture 的测试中调用。
 @pytest.fixture
 def knowledge_store() -> Iterator[PostgresKnowledgeStore]:
+    """为测试提供 knowledge_store 所需的输入或模拟行为。"""
     database_url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(database_url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -25,9 +28,11 @@ def knowledge_store() -> Iterator[PostgresKnowledgeStore]:
     yield store
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_postgres_idempotent_update_vector_order_sources_and_cascade(
     knowledge_store: PostgresKnowledgeStore,
 ) -> None:
+    """验证知识库更新具有幂等性，向量顺序、来源和级联删除正确。"""
     store = knowledge_store
     path = f"/tmp/skysun_test_helios_{uuid4().hex}.md"
     other_path = f"/tmp/skysun_test_orion_{uuid4().hex}.txt"
@@ -98,9 +103,11 @@ def test_postgres_idempotent_update_vector_order_sources_and_cascade(
     assert remaining == 0
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_postgres_rejects_invalid_vectors_without_writes(
     knowledge_store: PostgresKnowledgeStore,
 ) -> None:
+    """验证知识库存储拒绝无效向量且不写入数据。"""
     path = f"/tmp/skysun_test_bad_{uuid4().hex}.md"
     with pytest.raises(ValueError, match="1024"):
         knowledge_store.save_document(

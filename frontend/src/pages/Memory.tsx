@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Memory 相关逻辑。
 import { Brain, CalendarDays, Tag } from "lucide-react";
 import {
   EmptyState,
@@ -9,7 +10,9 @@ import {
 import { useResource } from "../hooks/useResource";
 import type { Memory } from "../types";
 
+// 调用位置：App 中 /memory 路由调用。
 export function MemoryPage() {
+  /** 加载并展示用户的长期记忆。 */
   const { data, loading, error, refresh } = useResource<Memory[]>("/memory");
   return (
     <div className="page">

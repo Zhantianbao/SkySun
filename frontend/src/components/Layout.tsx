@@ -1,3 +1,4 @@
+// 本文件负责前端数据与组件中的 Layout 相关逻辑。
 import {
   Activity,
   BookOpenText,
@@ -22,7 +23,9 @@ const navigation = [
   { to: "/screenshots", label: "截图", icon: Camera },
 ];
 
+// 调用位置：Protected 在验证登录后调用。
 export function Layout() {
+  /** 绘制工作台导航、用户信息和子页面出口。 */
   const { user, logout } = useAuth();
   const items =
     user?.role === "ADMIN"

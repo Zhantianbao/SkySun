@@ -1,3 +1,4 @@
+// 本文件负责页面路由与交互中的 Admin 相关逻辑。
 import {
   Activity,
   CheckCircle2,
@@ -16,7 +17,9 @@ import {
 import { useResource } from "../hooks/useResource";
 import type { Evaluation, Metrics, Trace } from "../types";
 
+// 调用位置：App 中 /admin 路由调用。
 export function Admin() {
+  /** 展示管理员可见的指标、轨迹和回答评估。 */
   const metrics = useResource<Metrics>("/admin/metrics");
   const traces = useResource<Trace[]>("/admin/traces?limit=20");
   const evaluations = useResource<Evaluation[]>("/admin/evaluations?limit=20");

@@ -1,4 +1,5 @@
 """Integration tests use only the dedicated local *_test database."""
+# 本文件负责测试用例中的 test、postgres、conversation 相关流程。
 
 import os
 from collections.abc import Callable, Iterator
@@ -11,8 +12,10 @@ from skysun.memory.conversation import ConversationMessage, ConversationService
 from skysun.memory.postgres_conversation import PostgresConversationStore
 
 
+# 调用位置：pytest 在依赖此 fixture 的测试中调用。
 @pytest.fixture
 def postgres_store() -> Iterator[tuple[PostgresConversationStore, Callable[[], str]]]:
+    """为测试提供 postgres_store 所需的输入或模拟行为。"""
     database_url = os.environ.get(
         "SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test"
     )
@@ -24,7 +27,9 @@ def postgres_store() -> Iterator[tuple[PostgresConversationStore, Callable[[], s
     store.initialize_schema()
     created_ids: list[str] = []
 
+    # 调用位置：tests/test_postgres_conversation.py 的 test_postgres_creation_order_isolation_and_idempotent_schema、tests/test_postgres_conversation.py 的 test_postgres_rolls_back_both_messages_on_second_insert_failure、tests/test_postgres_conversation.py 的 test_agent_failure_does_not_persist_partial_turn 等处调用。
     def create() -> str:
+        """创建新的记录或任务。"""
         conversation_id = store.create()
         created_ids.append(conversation_id)
         return conversation_id
@@ -45,9 +50,11 @@ def postgres_store() -> Iterator[tuple[PostgresConversationStore, Callable[[], s
                 )
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_postgres_creation_order_isolation_and_idempotent_schema(
     postgres_store: tuple[PostgresConversationStore, Callable[[], str]],
 ) -> None:
+    """验证数据库会话创建顺序、用户隔离和重复建表的幂等性。"""
     store, create = postgres_store
     first_id = create()
     second_id = create()
@@ -70,9 +77,11 @@ def test_postgres_creation_order_isolation_and_idempotent_schema(
         store.get_history(str(uuid4()))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_postgres_rolls_back_both_messages_on_second_insert_failure(
     postgres_store: tuple[PostgresConversationStore, Callable[[], str]],
 ) -> None:
+    """验证第二条消息写入失败时，两条消息都回滚。"""
     store, create = postgres_store
     conversation_id = create()
 
@@ -82,14 +91,19 @@ def test_postgres_rolls_back_both_messages_on_second_insert_failure(
     assert store.get_history(conversation_id) == ()
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_agent_failure_does_not_persist_partial_turn(
     postgres_store: tuple[PostgresConversationStore, Callable[[], str]],
 ) -> None:
+    """验证 Agent 失败时不会只保存半轮对话。"""
     store, create = postgres_store
     conversation_id = create()
 
+    # 以下集中定义 FailingAgent：Agent 执行层相关的数据和操作。
     class FailingAgent:
+        # 调用位置：FailingAgent 的调用方通过该方法使用。
         def reply(self, message: str, history: tuple[ConversationMessage, ...] = (), conversation_id: str | None = None) -> str:
+            """生成并返回本次对话的最终回复。"""
             raise RuntimeError("model unavailable")
 
     with pytest.raises(RuntimeError, match="model unavailable"):
@@ -98,7 +112,9 @@ def test_agent_failure_does_not_persist_partial_turn(
     assert store.get_history(conversation_id) == ()
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_bad_database_url_error_omits_password() -> None:
+    """验证数据库地址错误不会在异常中泄露密码。"""
     store = PostgresConversationStore(
         "postgresql://name:example-password@127.0.0.1:1/unavailable"
     )

@@ -1,4 +1,5 @@
 """PostgreSQL implementation of SkySun's conversation storage boundary."""
+# 本文件负责会话与记忆中的 postgres、conversation 相关流程。
 
 from uuid import UUID, uuid4
 
@@ -9,11 +10,16 @@ from skysun.user.postgres_users import ensure_user_schema
 from skysun.user.user_identity import LEGACY_USER_ID, owner_id
 
 
+# 以下集中定义 PostgresConversationStore：存储层相关的数据和操作。
 class PostgresConversationStore:
+    # 调用位置：创建 PostgresConversationStore 实例时调用。
     def __init__(self, database_url: str) -> None:
+        """保存依赖和初始状态，供该对象后续方法使用。"""
         self._database_url = database_url
 
+    # 调用位置：PostgresConversationStore 的 initialize_schema 与数据库读写方法调用。
     def _connect(self) -> psycopg.Connection:
+        """建立数据库连接，并统一连接参数。"""
         try:
             return psycopg.connect(self._database_url, connect_timeout=5)
         except psycopg.Error:
@@ -21,8 +27,9 @@ class PostgresConversationStore:
                 "Cannot connect to SkySun PostgreSQL; check DATABASE_URL and server availability"
             ) from None
 
+    # 调用位置：core/main.py 的 create_app 初始化存储时调用；相关测试也会直接调用。
     def initialize_schema(self) -> None:
-        """Create the v0.3 tables if absent, preserving all existing rows."""
+        """如果会话表不存在则创建，并保留已有记录。"""
         with self._connect() as conn:
             ensure_user_schema(conn)
             conn.execute(
@@ -56,7 +63,9 @@ class PostgresConversationStore:
                 """
             )
 
+    # 调用位置：memory/conversation.py 的 ConversationService.chat 调用。
     def create(self, conversation_id: str | None = None) -> str:
+        """在数据库中创建当前用户的会话。"""
         conversation_id = UUID(conversation_id) if conversation_id else uuid4()
         with self._connect() as conn:
             conn.execute(
@@ -65,7 +74,9 @@ class PostgresConversationStore:
             )
         return str(conversation_id)
 
+    # 调用位置：通过 PostgresConversationStore 实例在会话服务、记忆工具与整理服务中调用。
     def get_history(self, conversation_id: str) -> tuple[ConversationMessage, ...]:
+        """读取指定会话的历史消息。"""
         identifier = UUID(conversation_id)
         with self._connect() as conn:
             exists = conn.execute(
@@ -85,7 +96,9 @@ class PostgresConversationStore:
             ).fetchall()
         return tuple(ConversationMessage(role, content) for role, content in rows)
 
+    # 调用位置：通过 PostgresConversationStore 实例在会话服务、记忆工具与整理服务中调用。
     def list_conversations(self, limit: int = 50) -> tuple[ConversationSummary, ...]:
+        """按更新时间列出会话。"""
         with self._connect() as conn:
             rows = conn.execute("""
                 SELECT c.id, COALESCE(first_message.content, '新对话'),
@@ -107,8 +120,9 @@ class PostgresConversationStore:
         return tuple(ConversationSummary(str(row[0]), row[1][:80], row[2], row[3])
                      for row in rows)
 
+    # 调用位置：通过 PostgresConversationStore 实例在会话服务、记忆工具与整理服务中调用。
     def append_exchange(self, conversation_id: str, user: str, assistant: str) -> None:
-        """Commit both messages together or roll both back on any error."""
+        """在一个事务中保存用户消息和助手回复；任一步失败都回滚。"""
         identifier = UUID(conversation_id)
         with self._connect() as conn:
             if conn.execute("SELECT 1 FROM conversations WHERE id = %s AND user_id = %s",

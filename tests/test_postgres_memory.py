@@ -1,4 +1,5 @@
 """Personal memory integration against the dedicated local test database."""
+# 本文件负责测试用例中的 test、postgres、memory 相关流程。
 
 import os
 from collections.abc import Iterator
@@ -14,8 +15,10 @@ from skysun.memory.postgres_conversation import PostgresConversationStore
 from skysun.memory.postgres_memory import PostgresMemoryStore
 
 
+# 调用位置：pytest 在依赖此 fixture 的测试中调用。
 @pytest.fixture
 def stores() -> Iterator[tuple[PostgresMemoryStore, PostgresConversationStore]]:
+    """为测试提供 stores 所需的输入或模拟行为。"""
     database_url = os.environ.get("SKYSUN_TEST_DATABASE_URL", "postgresql:///skysun_test")
     with psycopg.connect(database_url) as conn:
         if not conn.info.dbname.endswith("_test"):
@@ -27,9 +30,11 @@ def stores() -> Iterator[tuple[PostgresMemoryStore, PostgresConversationStore]]:
     yield memory, conversations
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_memory_create_update_recall_forget_and_repeat_schema(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
+    """验证记忆可以创建、更新、检索和删除，重复建表也保持安全。"""
     memory, _ = stores
     key = f"v04_test_planet_{uuid4().hex[:8]}"
     try:
@@ -49,9 +54,11 @@ def test_memory_create_update_recall_forget_and_repeat_schema(
         memory.forget(key)
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_memory_global_while_conversation_history_isolated(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
+    """验证全局记忆可共享，而会话历史仍按用户隔离。"""
     memory, conversations = stores
     first_id = conversations.create()
     second_id = conversations.create()
@@ -75,7 +82,9 @@ def test_memory_global_while_conversation_history_isolated(
                 conn.execute("DELETE FROM conversations WHERE id = %s", (UUID(conversation_id),))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_memory_validation_and_safe_connection_error() -> None:
+    """验证记忆输入校验正确且连接错误不泄露敏感信息。"""
     assert normalize_key("Favorite-Test Planet") == "favorite_test_planet"
     with pytest.raises(ValueError):
         normalize_key("bad/key")
@@ -85,15 +94,24 @@ def test_memory_validation_and_safe_connection_error() -> None:
     assert "example-password" not in str(exc.value)
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_memory_sql_error_omits_database_detail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """验证记忆存储的 SQL 错误不会泄露数据库详情。"""
+    # 以下集中定义 BadConnection：数据结构或组件相关的数据和操作。
     class BadConnection:
+        # 调用位置：测试替身模拟相应的上下文、I/O 或同步接口时调用。
         def __enter__(self):
+            """为测试准备 __enter__ 所需的替身或输入。"""
             return self
 
+        # 调用位置：测试替身模拟相应的上下文、I/O 或同步接口时调用。
         def __exit__(self, *args):
+            """为测试准备 __exit__ 所需的替身或输入。"""
             return False
 
+        # 调用位置：tests/test_postgres_memory.py 的 test_memory_global_while_conversation_history_isolated 等处调用。
         def execute(self, *args):
+            """执行 Agent 或工作流并返回结构化结果。"""
             raise psycopg.Error("sensitive database detail")
 
     memory = PostgresMemoryStore("unused")
@@ -103,7 +121,9 @@ def test_memory_sql_error_omits_database_detail(monkeypatch: pytest.MonkeyPatch)
     assert "sensitive database detail" not in str(exc.value)
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_only_connection_failures_are_retryable() -> None:
+    """验证只有临时数据库连接故障会被重试。"""
     from types import SimpleNamespace
     from skysun.memory.postgres_memory import _is_transient
 
@@ -113,9 +133,11 @@ def test_only_connection_failures_are_retryable() -> None:
     assert not _is_transient(SimpleNamespace(sqlstate="28P01"))
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_curator_batch_is_atomic_and_lexical_recall_is_bounded(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
+    """验证记忆整理批次具有原子性，词项检索有数量上限。"""
     memory, _ = stores
     prefix = f"v04_test_batch_{uuid4().hex[:8]}"
     source = uuid4()
@@ -142,24 +164,31 @@ def test_curator_batch_is_atomic_and_lexical_recall_is_bounded(
         memory.forget(second_key)
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_obvious_secret_label_is_rejected_by_storage(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
+    """验证存储层拒绝明显带密钥标签的记忆。"""
     memory, _ = stores
     with pytest.raises(ValueError, match="Secret-like memory rejected"):
         memory.remember("api_key", "FAKE-TEST-TOKEN")
     assert memory.get("api_key") is None
 
 
+# 调用位置：pytest 执行该测试用例时调用。
 def test_accepted_candidate_persists_with_source_and_duplicate_is_skipped(
     stores: tuple[PostgresMemoryStore, PostgresConversationStore],
 ) -> None:
+    """验证被接受候选项持久化包含来源与重复的被跳过。"""
     memory, _ = stores
     key = f"v08_test_preference_{uuid4().hex[:8]}"
     source = uuid4()
 
+    # 以下集中定义 Curator：数据结构或组件相关的数据和操作。
     class Curator:
+        # 调用位置：src/skysun/memory/memory_curator.py 的 MemoryCurationService.process、tests/test_memory_curator.py 的 test_langchain_curator_uses_typed_json_output_without_network、tests/test_memory_extraction.py 的 test_valid_structured_output_is_accepted_without_retry 等处调用。
         def decide(self, context):
+            """根据对话和已有记忆决定新增、更新或删除内容。"""
             return MemoryPlan(decisions=[MemoryDecision(
                 action="upsert", key=key, content="Prefers concise answers",
                 category="preference", importance="high",
